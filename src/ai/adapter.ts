@@ -72,6 +72,10 @@ function personaPrompt(s: Scenario, st: ConversationState): string {
 食生活: ${p.diet}
 睡眠: ${p.sleep}
 本人が大切にしていること: ${p.values}
+教育歴: ${p.education ?? ""}
+居住都道府県: ${p.prefecture ?? ""}
+社会参加・孤立: ${p.socialParticipation ?? ""}
+Big Five: ${p.bigFive ?? ""}
 
 【今回の健診・支援場面】
 ${s.publicContext.join("。")}
@@ -142,13 +146,49 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
         "いかがでしょう",
         "健康状態について教えて",
       ];
-      if (!forbidden.some((phrase) => text.includes(phrase))) {
+
+      const numbers = text.match(/\d+(?:\.\d+)?/g) ?? [];
+      const allowedNumberText =
+        input.groundedSeed + " " + input.latestUserText;
+      const hasNewNumber = numbers.some(
+        (value) => !allowedNumberText.includes(value)
+      );
+
+      const protectedTerms = [
+        "高血圧",
+        "糖尿病",
+        "脂質異常",
+        "心筋梗塞",
+        "脳卒中",
+        "がん",
+        "薬",
+        "服薬",
+        "HbA1c",
+        "LDL",
+        "中性脂肪",
+      ];
+      const hasNewProtectedFact = protectedTerms.some(
+        (term) =>
+          text.includes(term) &&
+          !input.groundedSeed.includes(term) &&
+          !input.latestUserText.includes(term)
+      );
+
+      const tooLong =
+        text.length > Math.max(90, input.groundedSeed.length * 1.8);
+
+      if (
+        !forbidden.some((phrase) => text.includes(phrase)) &&
+        !hasNewNumber &&
+        !hasNewProtectedFact &&
+        !tooLong
+      ) {
         return text;
       }
     }
   }
 
-  throw new Error("LOCAL_AI_EMPTY_REPLY");
+  throw new Error("LOCAL_AI_REPLY_REJECTED");
 }
 
 export async function unloadLocalAI(): Promise<void> {
