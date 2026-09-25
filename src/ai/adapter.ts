@@ -1,5 +1,6 @@
 import * as webllm from "@mlc-ai/web-llm";
 import { ConversationState, Message, Scenario, TurnAnalysis } from "../domain/types";
+import { formatSessionMemory, PersonaDetailRequest, PersonaSessionMemory } from "../engine/personaMemory";
 
 export type AIReplyInput = {
   scenario: Scenario;
@@ -8,6 +9,17 @@ export type AIReplyInput = {
   messages: Message[];
   latestUserText: string;
   groundedSeed: string;
+  sessionMemory?: PersonaSessionMemory;
+};
+
+export type PersonaDetailInput = {
+  scenario: Scenario;
+  state: ConversationState;
+  messages: Message[];
+  latestUserText: string;
+  request: PersonaDetailRequest;
+  evidence: string;
+  sessionMemory: PersonaSessionMemory;
 };
 
 export type AIProgress = {
@@ -130,6 +142,8 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
       role: "system",
       content:
         personaPrompt(input.scenario, input.state) +
+        "\n\n【この会話中に確定した追加設定】\n" +
+        formatSessionMemory(input.sessionMemory ?? {}) +
         "\n\n【今回の返答で必ず守る内容】\n" +
         input.groundedSeed +
         "\n\n上の内容と人物背景に明示された事実だけを使い、対象者本人の自然な話し言葉に短く言い換えてください。新しい具体的事実は追加しないでください。人物背景に答えがない細部については、推測して埋めず、自然に「そこまでは意識していない」「はっきりとは分からない」と答えてください。質問返しだけで終わらず、保健師の直前の問いに直接答えてください。『〜しましょう』『〜しましょうね』『サポートします』『お手伝いします』『教えていただければ』など、支援者側の表現は絶対に使わないでください。",
@@ -203,6 +217,70 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
   }
 
   throw new Error("LOCAL_AI_REPLY_REJECTED");
+}
+
+
+export async function generatePersonaDetail(
+  input: PersonaDetailInput
+): Promise<string> {
+  if (!engine) throw new Error("LOCAL_AI_NOT_READY");
+
+  const recent = input.messages.slice(-6).map((m) => ({
+    role: m.role === "phn" ? ("user" as const) : ("assistant" as const),
+    content: m.text,
+  }));
+
+  const prompt =
+    personaPrompt(input.scenario, input.state) +
+    "\n\n【この会話中にすでに確定した追加設定】\n" +
+    formatSessionMemory(input.sessionMemory) +
+    "\n\n【今回の詳細生成】\n" +
+    `対象項目: ${input.request.label}\n` +
+    `JMED-Personas由来の関連情報: ${input.evidence || "明示なし"}\n` +
+    `保健師の質問: ${input.latestUserText}\n\n` +
+    "人物背景と既存の追加設定に矛盾しない範囲で、日常生活として十分あり得る具体的な内容を1〜2文で生成してください。" +
+    "ここでは会話シミュレーションの一貫性を保つため、食品名、選び方、時間帯、頻度などの生活上の細部を補って構いません。" +
+    "ただし病名、検査値、服薬、家族歴、収入額など医学的・社会経済的な新規事実は作らないでください。" +
+    "一度ここで決めた内容は以後この対象者の設定として固定されるため、既存設定と整合させてください。" +
+    "対象者本人の自然な日本語だけを返し、説明や箇条書き、JSONは出力しないでください。";
+
+  const messages: webllm.ChatCompletionMessageParam[] = [
+    { role: "system", content: prompt },
+    ...recent,
+    { role: "user", content: input.latestUserText },
+  ];
+
+  const response = await engine.chat.completions.create({
+    messages,
+    temperature: 0.35,
+    top_p: 0.8,
+    max_tokens: 72,
+    repetition_penalty: 1.05,
+  });
+
+  if ("choices" in response) {
+    const text = response.choices[0]?.message?.content?.trim();
+    if (text && text.length <= 140) {
+      const forbiddenMedical = [
+        "HbA1c",
+        "LDL",
+        "中性脂肪",
+        "糖尿病",
+        "高血圧",
+        "服薬",
+        "薬を",
+      ];
+      const introducedMedical = forbiddenMedical.some(
+        (term) =>
+          text.includes(term) &&
+          !input.evidence.includes(term) &&
+          !input.latestUserText.includes(term)
+      );
+      if (!introducedMedical) return text;
+    }
+  }
+
+  throw new Error("PERSONA_DETAIL_GENERATION_REJECTED");
 }
 
 export async function unloadLocalAI(): Promise<void> {
