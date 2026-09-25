@@ -11,7 +11,7 @@ const compact = (text: string) => text.replace(/\s+/g, "");
 
 function detailDimension(text: string): string {
   const t = compact(text);
-  if (/どんな|何を|種類|具体的/.test(t)) return "items";
+  if (/どんな|どのような|何を|種類|具体的|詳しく|詳しい|料理名|メニュー|献立|中身|内容/.test(t)) return "items";
   if (/何回|頻度|週に|毎日|何日/.test(t)) return "frequency";
   if (/どれくらい|どのくらい|量|何皿|何個|何杯/.test(t)) return "amount";
   if (/何時|時間帯|いつ食べ|何時頃/.test(t)) return "time";
@@ -45,7 +45,7 @@ export function detectPersonaDetailRequest(
   if (!topic) return null;
 
   const specificQuestion =
-    /どんな|何を|具体的|種類|何回|頻度|週に|毎日|何日|どれくらい|どのくらい|量|何皿|何個|何杯|何時|時間帯|いつ/.test(
+    /どんな|どのような|何を|具体的|種類|詳しく|詳しい|料理名|メニュー|献立|中身|内容|例えば|たとえば|何回|頻度|週に|毎日|何日|どれくらい|どのくらい|量|何皿|何個|何杯|何時|時間帯|いつ/.test(
       t
     );
 
