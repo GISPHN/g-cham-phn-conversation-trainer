@@ -23,6 +23,7 @@ import {
   isWebGPUSupported,
 } from "./ai/adapter";
 import {
+  checkProposalConsistency,
   detectPersonaDetailRequest,
   generatePersonaConsistentFallbackDetail,
   personaEvidenceForDetail,
@@ -321,7 +322,10 @@ export default function App() {
     if (!text || finished || generating) return;
 
     const analysis = analyzeTurn(text);
-    const nextState = updateState(state, analysis);
+    const consistencyReply = analysis.behaviorProposal
+      ? checkProposalConsistency(text, sessionMemory)
+      : null;
+    const nextState = consistencyReply ? state : updateState(state, analysis);
     const turn = analyses.length + 1;
     const phnMessage: Message = { role: "phn", text };
 
@@ -331,13 +335,18 @@ export default function App() {
     setGenerating(true);
     startThinkingFillers(text, nextState);
 
-    const detailRequest = detectPersonaDetailRequest(text);
+    const rawDetailRequest = detectPersonaDetailRequest(text);
+    const detailRequest =
+      analysis.elicitsGoal || analysis.behaviorProposal || analysis.checkupOpening
+        ? null
+        : rawDetailRequest;
     const rememberedDetail =
       detailRequest && !detailRequest.isCorrection
         ? sessionMemory[detailRequest.key]
         : undefined;
 
     let groundedSeed =
+      consistencyReply ??
       rememberedDetail ??
       buildGroundedReplySeed(
         scenario,
@@ -350,7 +359,9 @@ export default function App() {
 
     let replyText = groundedSeed;
 
-    if (detailRequest && !rememberedDetail) {
+    if (consistencyReply) {
+      replyText = consistencyReply;
+    } else if (detailRequest && !rememberedDetail) {
       try {
         if (aiStatus !== "ready") {
           setAIStatus("loading");
@@ -431,11 +442,9 @@ export default function App() {
 
     clearThinkingFillers();
     const finalReply = normalizeClientSpeech(replyText);
-    const finalState = updateStateFromClientReaction(
-      nextState,
-      analysis,
-      finalReply
-    );
+    const finalState = consistencyReply
+      ? nextState
+      : updateStateFromClientReaction(nextState, analysis, finalReply);
     setState(finalState);
     setMessages((prev) => [...prev, { role: "client", text: finalReply }]);
     setGenerating(false);
@@ -516,7 +525,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.6</span>
+        <span className="badge">MVP 0.5.7</span>
       </header>
 
       <section className="panel">
