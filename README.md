@@ -15,7 +15,7 @@
 - 面接後フィードバック
 - GitHub Pages用Workflow
 
-現時点では教育設計と状態遷移を検証するため、LLMはまだ接続していません。
+複雑な会話の自然化には、ブラウザ内WebLLMで Google Gemma 2 2B JPN IT を使用します。挨拶や単純な生活習慣の質問はJMED-Personasの事実から即答し、LLMへの依存を限定しています。
 
 ## 今後
 
@@ -28,7 +28,7 @@
 
 ## JMED-Personas
 
-将来のペルソナ生成に sociocom/JMED-Personas を利用予定です。
+対象者背景には sociocom/JMED-Personas の実レコードを利用しています。
 
 https://huggingface.co/datasets/sociocom/JMED-Personas
 
@@ -66,3 +66,10 @@ MVP 0.4 では Hugging Face Dataset Viewer API を通じて `sociocom/JMED-Perso
 40〜74歳のレコードから、各ケースの生活習慣条件に比較的適合する対象者を選び、年齢、性別、職業、健康リテラシー、家族背景、喫煙、飲酒、運動、食事、睡眠、Big Five、社会参加等を会話背景として利用します。
 
 挨拶や単一の生活習慣を尋ねる質問はLLMを介さずJMED-Personasの事実から返答します。複数の背景を統合する必要がある問いだけローカルLLMで自然化し、新規数値、病名、服薬情報、支援者側への役割反転が検出された生成は破棄します。
+
+
+## Local LLM
+
+MVP 0.4.3 からローカル会話モデルを `Qwen2.5-0.5B-Instruct-q4f16_1-MLC` から `gemma-2-2b-jpn-it-q4f16_1-MLC` へ変更しました。
+
+Gemma 2 2B JPN IT は Google の日本語向け instruction tuned model を WebLLM でブラウザ内実行します。JMED-Personas由来の事実ベース返答案を自然な対象者発話へ整える用途に限定し、新規の病名・数値・服薬情報や支援者側への役割反転が検出された生成は破棄します。
