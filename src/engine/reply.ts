@@ -40,7 +40,11 @@ function detectIntent(text: string): Intent {
 
   if (hasAny(t, ["こんにちは", "よろしく", "はじめまして", "おはよう", "こんばんは"])) return "greeting";
   if (hasAny(t, ["何が気になる", "どこが気になる", "気になっている", "心配", "不安"])) return "concern";
-  if (hasAny(t, ["困って", "難しい", "できない理由", "障害", "妨げ", "大変"])) return "barrier";
+  if (
+    hasAny(t, ["困って", "難しい", "できない理由", "障害", "妨げ", "大変", "心当たり"]) ||
+    /自[信身].{0,10}(ない|理由)/.test(t) ||
+    /(続けられない|増やせない|減らせない).{0,10}理由/.test(t)
+  ) return "barrier";
   if (hasAny(t, ["変えられそう", "できそう", "できますか", "できるでしょう", "可能", "取り組めそう", "始められそう", "何ならできる", "増やせ", "減らせ", "変えられ"])) return "change";
   if (hasAny(t, ["大切", "楽しみ", "続けたい", "目標", "どうなりたい", "価値"])) return "importance";
   if (hasAny(t, ["仕事", "勤務", "職業", "働", "忙しい", "残業"])) return "work";
@@ -605,10 +609,13 @@ function topicReply(
 
   if (intent === "barrier") {
     const candidates = [
-      p.economicConstraint && p.economicConstraint !== "特になし"
+      p.economicConstraint &&
+      !/^(特になし|なし|特に制約なし|制約なし|特段なし)$/.test(p.economicConstraint.trim())
         ? `${p.economicConstraint}というところが難しいです`
         : "",
-      p.occupation ? `${p.occupation}の仕事があるので、生活の時間を一定にするのは簡単ではないです` : "",
+      p.occupation
+        ? `${p.occupation}の仕事があるので、忙しい日は食事の時間や内容を一定にするのが難しいです`
+        : "",
       "一度にいろいろ変えるのは難しいと思っています",
     ].filter(Boolean);
     const base = chooseNonRepeated(candidates, messages);
