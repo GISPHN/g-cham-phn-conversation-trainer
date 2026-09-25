@@ -15,7 +15,7 @@ export type AIProgress = {
   progress?: number;
 };
 
-const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
 
 let engine: webllm.MLCEngineInterface | null = null;
 let loadingPromise: Promise<webllm.MLCEngineInterface> | null = null;
@@ -102,7 +102,7 @@ ${s.hiddenContext.join("。")}
 export async function generateLocalAIReply(input: AIReplyInput): Promise<string> {
   if (!engine) throw new Error("LOCAL_AI_NOT_READY");
 
-  const recent = input.messages.slice(-8).map((m) => ({
+  const recent = input.messages.slice(-4).map((m) => ({
     role: m.role === "phn" ? ("user" as const) : ("assistant" as const),
     content: m.text,
   }));
@@ -114,7 +114,7 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
         personaPrompt(input.scenario, input.state) +
         "\n\n【今回の返答で必ず守る内容】\n" +
         input.groundedSeed +
-        "\n\n上の内容だけを、対象者本人の自然な話し言葉に言い換えてください。新しい事実は追加しないでください。質問返しだけで終わらず、保健師の直前の問いに直接答えてください。",
+        "\n\n上の内容だけを、対象者本人の自然な話し言葉に短く言い換えてください。新しい事実は追加しないでください。質問返しだけで終わらず、保健師の直前の問いに直接答えてください。『〜しましょう』『〜しましょうね』『サポートします』『お手伝いします』『教えていただければ』など、支援者側の表現は絶対に使わないでください。",
     },
     ...recent,
     { role: "user", content: input.latestUserText },
@@ -122,15 +122,30 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
 
   const response = await engine.chat.completions.create({
     messages,
-    temperature: 0.45,
-    top_p: 0.85,
-    max_tokens: 96,
+    temperature: 0.2,
+    top_p: 0.75,
+    max_tokens: 64,
     repetition_penalty: 1.05,
   });
 
   if ("choices" in response) {
     const text = response.choices[0]?.message?.content?.trim();
-    if (text) return text;
+    if (text) {
+      const forbidden = [
+        "しましょう",
+        "しましょうね",
+        "サポートします",
+        "サポートできます",
+        "お手伝いします",
+        "お手伝いできます",
+        "教えていただければ",
+        "いかがでしょう",
+        "健康状態について教えて",
+      ];
+      if (!forbidden.some((phrase) => text.includes(phrase))) {
+        return text;
+      }
+    }
   }
 
   throw new Error("LOCAL_AI_EMPTY_REPLY");
