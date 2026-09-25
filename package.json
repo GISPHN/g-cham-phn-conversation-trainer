@@ -1,7 +1,7 @@
 {
   "name": "g-cham-phn-conversation-trainer",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,8 +14,7 @@
     "typescript": "^5.7.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@mlc-ai/web-llm": "^0.2.85",
-    "kokoro-js-jp": "0.2.0"
+    "@mlc-ai/web-llm": "^0.2.85"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
