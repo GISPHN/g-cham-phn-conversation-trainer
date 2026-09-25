@@ -15,7 +15,7 @@ export type AIProgress = {
   progress?: number;
 };
 
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+const MODEL_ID = "gemma-2-2b-jpn-it-q4f16_1-MLC";
 
 let engine: webllm.MLCEngineInterface | null = null;
 let loadingPromise: Promise<webllm.MLCEngineInterface> | null = null;
