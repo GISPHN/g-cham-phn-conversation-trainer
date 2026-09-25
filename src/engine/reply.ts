@@ -68,20 +68,59 @@ export function shouldBypassAI(userText: string): boolean {
 }
 
 function politeSentence(text: string): string {
-  const trimmed = text.trim().replace(/。+$/g, "");
-  if (!trimmed) return "";
+  let s = text.trim().replace(/。+$/g, "");
+  if (!s) return "";
 
-  if (/[ですますでしたませんでしょうたいですと思います気になります難しいです]$/.test(trimmed)) {
-    return trimmed + "。";
+  if (/(です|ます|でした|ました|ません|でしょう|と思います|気になります|難しいです)$/.test(s)) {
+    return s + "。";
   }
 
-  if (/る$/.test(trimmed)) return trimmed.replace(/る$/, "ることが多いです。");
-  if (/ある$/.test(trimmed)) return trimmed.replace(/ある$/, "あります。");
-  if (/ない$/.test(trimmed)) return trimmed.replace(/ない$/, "ないです。");
-  if (/多い$/.test(trimmed)) return trimmed + "です。";
-  if (/少ない$/.test(trimmed)) return trimmed + "です。";
+  const replacements: Array<[RegExp, string]> = [
+    [/ことが多い$/, "ことが多いです"],
+    [/場合が多い$/, "場合が多いです"],
+    [/日が多い$/, "日が多いです"],
+    [/が多い$/, "が多いです"],
+    [/が少ない$/, "が少ないです"],
+    [/ではない$/, "ではないです"],
+    [/限らない$/, "限らないです"],
+    [/していない$/, "していません"],
+    [/食べない$/, "食べません"],
+    [/飲まない$/, "飲みません"],
+    [/できない$/, "できません"],
+    [/分からない$/, "分かりません"],
+    [/わからない$/, "分かりません"],
+    [/がある$/, "があります"],
+    [/である$/, "です"],
+    [/になる$/, "になります"],
+    [/している$/, "しています"],
+    [/食べる$/, "食べます"],
+    [/飲む$/, "飲みます"],
+    [/行く$/, "行きます"],
+    [/歩く$/, "歩きます"],
+    [/寝る$/, "寝ます"],
+    [/起きる$/, "起きます"],
+    [/多い$/, "多いです"],
+    [/少ない$/, "少ないです"],
+  ];
 
-  return trimmed + "です。";
+  for (const [pattern, value] of replacements) {
+    if (pattern.test(s)) {
+      s = s.replace(pattern, value);
+      return s + "。";
+    }
+  }
+
+  if (/[。！？!?]$/.test(s)) return s;
+  return s + "。";
+}
+
+export function normalizeClientSpeech(text: string): string {
+  return text
+    .split(/(?<=[。！？!?])|\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => politeSentence(part))
+    .join("");
 }
 
 function splitFacts(text: string): string[] {
