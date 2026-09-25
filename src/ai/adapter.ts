@@ -7,6 +7,7 @@ export type AIReplyInput = {
   analysis: TurnAnalysis;
   messages: Message[];
   latestUserText: string;
+  groundedSeed: string;
 };
 
 export type AIProgress = {
@@ -14,7 +15,7 @@ export type AIProgress = {
   progress?: number;
 };
 
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 
 let engine: webllm.MLCEngineInterface | null = null;
 let loadingPromise: Promise<webllm.MLCEngineInterface> | null = null;
@@ -107,16 +108,23 @@ export async function generateLocalAIReply(input: AIReplyInput): Promise<string>
   }));
 
   const messages: webllm.ChatCompletionMessageParam[] = [
-    { role: "system", content: personaPrompt(input.scenario, input.state) },
+    {
+      role: "system",
+      content:
+        personaPrompt(input.scenario, input.state) +
+        "\n\n【今回の返答で必ず守る内容】\n" +
+        input.groundedSeed +
+        "\n\n上の内容だけを、対象者本人の自然な話し言葉に言い換えてください。新しい事実は追加しないでください。質問返しだけで終わらず、保健師の直前の問いに直接答えてください。",
+    },
     ...recent,
     { role: "user", content: input.latestUserText },
   ];
 
   const response = await engine.chat.completions.create({
     messages,
-    temperature: 0.65,
-    top_p: 0.9,
-    max_tokens: 120,
+    temperature: 0.45,
+    top_p: 0.85,
+    max_tokens: 96,
     repetition_penalty: 1.05,
   });
 
