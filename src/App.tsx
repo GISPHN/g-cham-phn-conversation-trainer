@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { scenarios } from "./data/scenarios";
-import { ConversationState, Message, TurnAnalysis } from "./domain/types";
+import { loadJmedPersona, withPersona } from "./data/jmed";
+import { ConversationState, Message, Persona, TurnAnalysis } from "./domain/types";
 import { analyzeTurn } from "./engine/analyze";
 import { updateState } from "./engine/state";
-import { buildGroundedReplySeed, generateRuleBasedReply } from "./engine/reply";
+import {
+  buildGroundedReplySeed,
+  generateRuleBasedReply,
+  shouldBypassAI,
+} from "./engine/reply";
 import { buildFeedback } from "./engine/feedback";
 import {
   generateLocalAIReply,
@@ -51,17 +56,27 @@ declare global {
 }
 
 type AIStatus = "off" | "loading" | "ready" | "error";
+type PersonaStatus = "idle" | "loading" | "ready" | "fallback";
 
 export default function App() {
   const [id, setId] = useState(scenarios[0].id);
-  const scenario = useMemo(
+  const baseScenario = useMemo(
     () => scenarios.find((x) => x.id === id) ?? scenarios[0],
     [id]
   );
 
+  const [activePersona, setActivePersona] = useState<Persona>(baseScenario.persona);
+  const [personaStatus, setPersonaStatus] = useState<PersonaStatus>("idle");
+  const [personaMessage, setPersonaMessage] = useState("");
+
+  const scenario = useMemo(
+    () => withPersona(baseScenario, activePersona),
+    [baseScenario, activePersona]
+  );
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [analyses, setAnalyses] = useState<TurnAnalysis[]>([]);
-  const [state, setState] = useState<ConversationState>(scenario.initialState);
+  const [state, setState] = useState<ConversationState>(baseScenario.initialState);
   const [input, setInput] = useState("");
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -93,6 +108,12 @@ export default function App() {
     });
   }, [messages, generating]);
 
+  useEffect(() => {
+    setActivePersona(baseScenario.persona);
+    setPersonaStatus("idle");
+    setPersonaMessage("");
+  }, [baseScenario]);
+
   const speakClient = (text: string) => {
     if (!readAloud || !synthesisSupported || !text) return;
 
@@ -118,10 +139,8 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
-  const startTraining = (next = id) => {
-    const selected = scenarios.find((x) => x.id === next) ?? scenarios[0];
+  const resetConversation = (selected = baseScenario) => {
     if (synthesisSupported) window.speechSynthesis.cancel();
-
     setMessages([]);
     setAnalyses([]);
     setState(selected.initialState);
@@ -133,9 +152,41 @@ export default function App() {
     setGenerating(false);
   };
 
+  const loadPersonaAndStart = async (selected = baseScenario) => {
+    setPersonaStatus("loading");
+    setPersonaMessage("JMED-Personasから対象者背景を取得しています…");
+    setStarted(false);
+
+    try {
+      const persona = await loadJmedPersona(selected);
+      setActivePersona(persona);
+      setPersonaStatus("ready");
+      setPersonaMessage(
+        `JMED-Personas実データを使用中（ID: ${persona.sourceId?.slice(0, 8) ?? "unknown"}…）`
+      );
+      resetConversation(selected);
+    } catch (error) {
+      console.error(error);
+      setActivePersona(selected.persona);
+      setPersonaStatus("fallback");
+      setPersonaMessage(
+        "JMED-Personasを取得できなかったため、内蔵デモペルソナを使用しています。"
+      );
+      resetConversation(selected);
+    }
+  };
+
   const chooseScenario = (value: string) => {
+    const selected = scenarios.find((x) => x.id === value) ?? scenarios[0];
     setId(value);
-    startTraining(value);
+    setActivePersona(selected.persona);
+    setPersonaStatus("idle");
+    setPersonaMessage("");
+    setMessages([]);
+    setAnalyses([]);
+    setState(selected.initialState);
+    setStarted(false);
+    setFinished(false);
   };
 
   const enableLocalAI = async () => {
@@ -160,18 +211,13 @@ export default function App() {
             : null
         );
       });
-
       setAIStatus("ready");
-      setAIProgress(
-        "ローカルAIの準備が完了しました。対象者の返答は端末内で生成されます。"
-      );
+      setAIProgress("ローカルAIの準備が完了しました。複雑な質問だけAIで自然化します。");
       setAIProgressValue(100);
     } catch (error) {
       console.error(error);
       setAIStatus("error");
-      setAIProgress(
-        "ローカルAIを読み込めませんでした。ルールベース会話へ自動的に切り替えます。"
-      );
+      setAIProgress("ローカルAIを読み込めませんでした。ルールベース会話を使用します。");
       setAIProgressValue(null);
     }
   };
@@ -191,7 +237,6 @@ export default function App() {
     setInput("");
     setGenerating(true);
 
-    let replyText = "";
     const groundedSeed = buildGroundedReplySeed(
       scenario,
       nextState,
@@ -200,7 +245,10 @@ export default function App() {
       text
     );
 
-    if (aiStatus === "ready") {
+    let replyText = groundedSeed;
+    const useAI = aiStatus === "ready" && !shouldBypassAI(text);
+
+    if (useAI) {
       try {
         replyText = await generateLocalAIReply({
           scenario,
@@ -211,27 +259,12 @@ export default function App() {
           groundedSeed,
         });
       } catch (error) {
-        console.error(error);
-        replyText = generateRuleBasedReply(
-          scenario,
-          nextState,
-          analysis,
-          turn,
-          text
-        );
+        console.warn("AI reply rejected; using grounded reply.", error);
+        replyText = groundedSeed;
       }
-    } else {
-      replyText = generateRuleBasedReply(
-        scenario,
-        nextState,
-        analysis,
-        turn,
-        text
-      );
     }
 
-    const clientMessage: Message = { role: "client", text: replyText };
-    setMessages((prev) => [...prev, clientMessage]);
+    setMessages((prev) => [...prev, { role: "client", text: replyText }]);
     setGenerating(false);
     speakClient(replyText);
   };
@@ -273,21 +306,14 @@ export default function App() {
     };
 
     recognition.onerror = (event) => {
-      if (
-        event.error === "not-allowed" ||
-        event.error === "service-not-allowed"
-      ) {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setSpeechStatus(
           "マイクの使用が許可されていません。ブラウザのサイト設定でマイクを許可してください。"
         );
       } else if (event.error === "no-speech") {
-        setSpeechStatus(
-          "音声を認識できませんでした。もう一度お試しください。"
-        );
+        setSpeechStatus("音声を認識できませんでした。もう一度お試しください。");
       } else {
-        setSpeechStatus(
-          `音声入力でエラーが発生しました（${event.error}）。`
-        );
+        setSpeechStatus(`音声入力でエラーが発生しました（${event.error}）。`);
       }
       setListening(false);
     };
@@ -317,7 +343,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.3.1</span>
+        <span className="badge">MVP 0.4</span>
       </header>
 
       <section className="panel">
@@ -332,24 +358,13 @@ export default function App() {
 
         <div className="grid">
           <div>
-            <h2>{scenario.title}</h2>
-            <p>
-              {scenario.supportType}・{scenario.difficulty}
-            </p>
-            <ul>
-              {scenario.publicContext.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ul>
+            <h2>{baseScenario.title}</h2>
+            <p>{baseScenario.supportType}・{baseScenario.difficulty}</p>
+            <ul>{baseScenario.publicContext.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
-
           <div>
             <h3>学習目標</h3>
-            <ul>
-              {scenario.learningObjectives.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ul>
+            <ul>{baseScenario.learningObjectives.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
         </div>
       </section>
@@ -358,8 +373,8 @@ export default function App() {
         <div>
           <h2>会話生成モード</h2>
           <p className="small">
-            ローカルAIを有効にすると、対象者背景と会話履歴に基づいて端末内で返答を生成します。
-            読み込めない場合はルールベース会話を継続できます。
+            挨拶や単純な生活習慣の質問はJMED-Personasの事実から即答します。
+            複数の背景を統合する質問だけローカルAIで自然化します。
           </p>
         </div>
 
@@ -391,16 +406,11 @@ export default function App() {
           </label>
         </div>
 
-
         {aiProgress && (
           <div className="aiProgress">
             <p className="small">{aiProgress}</p>
-            {aiProgressValue !== null && (
-              <progress max="100" value={aiProgressValue} />
-            )}
-            <p className="tiny">
-              モデル: {getLocalModelId()}
-            </p>
+            {aiProgressValue !== null && <progress max="100" value={aiProgressValue} />}
+            <p className="tiny">モデル: {getLocalModelId()}</p>
           </div>
         )}
       </section>
@@ -409,18 +419,26 @@ export default function App() {
         <div className="panel conversationPanel">
           <div className="head">
             <h2>会話</h2>
-            <button className="secondary" onClick={() => startTraining()}>
+            <button
+              className="secondary"
+              onClick={() => resetConversation(baseScenario)}
+              disabled={!started}
+            >
               最初から
             </button>
           </div>
 
-          {!started ? (
+          {personaStatus === "loading" ? (
+            <div className="empty">
+              <p>JMED-Personasから対象者を準備しています…</p>
+            </div>
+          ) : !started ? (
             <div className="empty">
               <p>対象者を迎える場面から始まります。</p>
               <p className="small">
-                保健師から挨拶、自己紹介、面接の導入を行ってください。
+                開始時にJMED-Personasの実レコードから40〜74歳の対象者背景を取得します。
               </p>
-              <button onClick={() => startTraining()}>
+              <button onClick={() => void loadPersonaAndStart(baseScenario)}>
                 トレーニング開始
               </button>
             </div>
@@ -428,10 +446,10 @@ export default function App() {
             <>
               <div className="scenarioCue">
                 <span>場面</span>
-                <p>
-                  対象者が着席しました。あなたから会話を始めてください。
-                </p>
+                <p>対象者が着席しました。あなたから会話を始めてください。</p>
               </div>
+
+              {personaMessage && <p className="personaSource">{personaMessage}</p>}
 
               <div className="messages scrollableMessages" ref={messageScrollRef}>
                 {messages.length === 0 && (
@@ -442,9 +460,7 @@ export default function App() {
 
                 {messages.map((x, i) => (
                   <div key={i} className={"msg " + x.role}>
-                    <small>
-                      {x.role === "phn" ? "保健師" : "対象者"}
-                    </small>
+                    <small>{x.role === "phn" ? "保健師" : "対象者"}</small>
                     <p>{x.text}</p>
                     {x.role === "client" && synthesisSupported && (
                       <button
@@ -462,11 +478,7 @@ export default function App() {
                 {generating && (
                   <div className="msg client pending">
                     <small>対象者</small>
-                    <p>
-                      {aiStatus === "ready"
-                        ? "考えています…"
-                        : "返答を考えています…"}
-                    </p>
+                    <p>返答を考えています…</p>
                   </div>
                 )}
               </div>
@@ -479,11 +491,7 @@ export default function App() {
                     placeholder="対象者に話しかけてください"
                     disabled={generating}
                     onKeyDown={(e) => {
-                      if (
-                        e.key === "Enter" &&
-                        !e.shiftKey &&
-                        !generating
-                      ) {
+                      if (e.key === "Enter" && !e.shiftKey && !generating) {
                         e.preventDefault();
                         void send();
                       }
@@ -493,18 +501,13 @@ export default function App() {
                   <div className="voiceRow">
                     <button
                       type="button"
-                      className={
-                        listening ? "voice active" : "voice secondary"
-                      }
+                      className={listening ? "voice active" : "voice secondary"}
                       onClick={toggleSpeech}
                       aria-pressed={listening}
                       disabled={generating}
                     >
-                      {listening
-                        ? "■ 音声入力を停止"
-                        : "🎙 音声で入力"}
+                      {listening ? "■ 音声入力を停止" : "🎙 音声で入力"}
                     </button>
-
                     <span className="small">
                       {speechSupported
                         ? "日本語音声をテキスト化します。"
@@ -513,9 +516,7 @@ export default function App() {
                   </div>
 
                   {speechStatus && (
-                    <p className="speechStatus" role="status">
-                      {speechStatus}
-                    </p>
+                    <p className="speechStatus" role="status">{speechStatus}</p>
                   )}
 
                   <div className="actions">
@@ -526,10 +527,8 @@ export default function App() {
                       className="secondary"
                       onClick={() => {
                         setFinished(true);
-                        if (synthesisSupported) {
-                          window.speechSynthesis.cancel();
-                        }
-                            }}
+                        if (synthesisSupported) window.speechSynthesis.cancel();
+                      }}
                     >
                       面接を終了して振り返る
                     </button>
@@ -542,30 +541,22 @@ export default function App() {
 
         <aside className="panel">
           <h2>トレーニング中の状態</h2>
-          <p className="small">
-            教育用の内部モデルであり心理尺度ではありません。
-          </p>
+          <p className="small">教育用の内部モデルであり心理尺度ではありません。</p>
 
-          {(Object.keys(state) as (keyof ConversationState)[]).map(
-            (key) => (
-              <div className="metric" key={key}>
-                <div>
-                  <span>{names[key]}</span>
-                  <span>{state[key]}</span>
-                </div>
-                <progress max="100" value={state[key]} />
-              </div>
-            )
-          )}
+          {(Object.keys(state) as (keyof ConversationState)[]).map((key) => (
+            <div className="metric" key={key}>
+              <div><span>{names[key]}</span><span>{state[key]}</span></div>
+              <progress max="100" value={state[key]} />
+            </div>
+          ))}
 
           <h3>対象者背景</h3>
-          <p>
-            {scenario.persona.age}歳・{scenario.persona.sex}／
-            {scenario.persona.occupation}
-          </p>
-          <p>
-            {scenario.persona.exercise}／{scenario.persona.diet}
-          </p>
+          <p>{scenario.persona.age}歳・{scenario.persona.sex}／{scenario.persona.occupation}</p>
+          {scenario.persona.prefecture && <p>{scenario.persona.prefecture}／{scenario.persona.education}</p>}
+          <p>{scenario.persona.exercise}／{scenario.persona.diet}</p>
+          {scenario.persona.source === "JMED-Personas" && (
+            <p className="sourceBadge">JMED-Personas 実レコード</p>
+          )}
         </aside>
       </section>
 
@@ -573,39 +564,16 @@ export default function App() {
         <section className="panel feedback">
           <h2>振り返り</h2>
           <div className="grid3">
-            <div>
-              <h3>できていた点</h3>
-              <ul>
-                {feedback.strengths.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3>改善できる点</h3>
-              <ul>
-                {feedback.improvements.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3>未確認・次の課題</h3>
-              <ul>
-                {feedback.unresolved.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </div>
+            <div><h3>できていた点</h3><ul>{feedback.strengths.map((x) => <li key={x}>{x}</li>)}</ul></div>
+            <div><h3>改善できる点</h3><ul>{feedback.improvements.map((x) => <li key={x}>{x}</li>)}</ul></div>
+            <div><h3>未確認・次の課題</h3><ul>{feedback.unresolved.map((x) => <li key={x}>{x}</li>)}</ul></div>
           </div>
         </section>
       )}
 
       <footer>
-        参考設計：厚生労働省「標準的な健診・保健指導プログラム（令和6年度版）」。
-        JMED-Personas利用時はCC BY 4.0に基づき出典を表示します。
+        対象者背景: JMED-Personas-100k (CC BY 4.0, sociocom/NAIST)。
+        参考設計: 厚生労働省「標準的な健診・保健指導プログラム（令和6年度版）」。
       </footer>
     </main>
   );
