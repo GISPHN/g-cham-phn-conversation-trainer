@@ -5,3 +5,7 @@
 
 .personaSource{margin:8px 0 12px;padding:8px 10px;border-radius:10px;background:#f2f7f5;color:#46645c;font-size:.82rem}
 .sourceBadge{display:inline-block;margin-top:4px;padding:5px 8px;border-radius:999px;background:#e5f0ec;color:#2e6256;font-size:.78rem}
+
+.decisionStatus{margin-top:14px;padding:12px;border-radius:12px;background:#f6f7f8;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.decisionStatus span{font-size:.85rem;color:#5f6670}
+.decisionStatus strong{font-size:.9rem;text-align:right}
