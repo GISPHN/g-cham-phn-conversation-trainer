@@ -1,31 +1,27 @@
 import { Persona, Scenario } from "../domain/types";
 
-const DATASET = "sociocom/JMED-Personas";
-const CONFIG = "default";
-const SPLIT = "train";
-const TOTAL_ROWS = 100000;
-const BATCH = 30;
+type JmedRow = Record<string, unknown>;
 
-type HfRow = {
-  row_idx: number;
-  row: Record<string, unknown>;
+type BundledJmed = {
+  dataset: string;
+  config: string;
+  split: string;
+  generatedAt: string;
+  count: number;
+  records: JmedRow[];
 };
 
-type HfRowsResponse = {
-  rows: HfRow[];
-};
-
-const str = (row: Record<string, unknown>, key: string) => {
+const str = (row: JmedRow, key: string) => {
   const value = row[key];
   return value == null ? "" : String(value).trim();
 };
 
-const num = (row: Record<string, unknown>, key: string) => {
+const num = (row: JmedRow, key: string) => {
   const value = Number(row[key]);
   return Number.isFinite(value) ? value : NaN;
 };
 
-function scoreRow(row: Record<string, unknown>, scenarioId: string): number {
+function scoreRow(row: JmedRow, scenarioId: string): number {
   const age = num(row, "年齢");
   if (!Number.isFinite(age) || age < 40 || age > 74) return -999;
 
@@ -34,12 +30,11 @@ function scoreRow(row: Record<string, unknown>, scenarioId: string): number {
   const diet = str(row, "普段の食生活");
   const literacy = str(row, "医療・健康リテラシー");
   const occupation = str(row, "職業");
-  const bmiText = str(row, "BMI");
-  const bmi = Number.parseFloat(bmiText);
+  const bmi = Number.parseFloat(str(row, "BMI"));
 
   if (Number.isFinite(bmi) && bmi >= 23) score += 3;
-  if (/少ない|なし|不足|ほとんど/.test(exercise)) score += 3;
-  if (/外食|惣菜|調理済み|肉料理|野菜.*少/.test(diet)) score += 2;
+  if (/少ない|なし|不足|ほとんど|運動習慣なし/.test(exercise)) score += 3;
+  if (/外食|惣菜|調理済み|野菜.*少/.test(diet)) score += 2;
 
   if (scenarioId === "shi-01") {
     if (/営業|管理|販売|会社|運転|事務|技術|サービス/.test(occupation)) score += 3;
@@ -53,17 +48,19 @@ function scoreRow(row: Record<string, unknown>, scenarioId: string): number {
   return score;
 }
 
-function toPersona(row: Record<string, unknown>): Persona {
+function normalizeLiteracy(value: string): "低" | "中" | "高" {
+  if (/高/.test(value)) return "高";
+  if (/低/.test(value)) return "低";
+  return "中";
+}
+
+function toPersona(row: JmedRow): Persona {
   return {
     id: str(row, "患者ID") || crypto.randomUUID(),
     age: num(row, "年齢"),
     sex: str(row, "性別"),
     occupation: str(row, "職業"),
-    healthLiteracy: /高/.test(str(row, "医療・健康リテラシー"))
-      ? "高"
-      : /低/.test(str(row, "医療・健康リテラシー"))
-      ? "低"
-      : "中",
+    healthLiteracy: normalizeLiteracy(str(row, "医療・健康リテラシー")),
     economicConstraint: str(row, "経済的制約"),
     household: str(row, "同居／独居"),
     familyRelationship: str(row, "家族との関係性・キーパーソン"),
@@ -72,9 +69,7 @@ function toPersona(row: Record<string, unknown>): Persona {
     exercise: str(row, "運動習慣"),
     diet: str(row, "普段の食生活"),
     sleep: str(row, "睡眠"),
-    values:
-      str(row, "趣味・大切にしている活動") ||
-      str(row, "ペルソナ_価値観・心理面"),
+    values: str(row, "趣味・大切にしている活動"),
     representativeUtterance:
       str(row, "患者の語り/代表発話") || "よろしくお願いします。",
     education: str(row, "教育歴"),
@@ -88,44 +83,34 @@ function toPersona(row: Record<string, unknown>): Persona {
   };
 }
 
-async function fetchBatch(offset: number): Promise<HfRow[]> {
-  const params = new URLSearchParams({
-    dataset: DATASET,
-    config: CONFIG,
-    split: SPLIT,
-    offset: String(offset),
-    length: String(BATCH),
-  });
-  const response = await fetch(
-    `https://datasets-server.huggingface.co/rows?${params.toString()}`
-  );
-  if (!response.ok) throw new Error(`JMED_HTTP_${response.status}`);
-  const data = (await response.json()) as HfRowsResponse;
-  return data.rows ?? [];
+async function loadBundledRows(): Promise<JmedRow[]> {
+  const url = `${import.meta.env.BASE_URL}jmed-personas.sample.json`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`JMED_BUNDLE_HTTP_${response.status}`);
+  }
+  const data = (await response.json()) as BundledJmed;
+  if (!Array.isArray(data.records) || data.records.length === 0) {
+    throw new Error("JMED_BUNDLE_EMPTY");
+  }
+  return data.records;
 }
 
 export async function loadJmedPersona(
   scenario: Scenario
 ): Promise<Persona> {
-  let best: { score: number; persona: Persona } | null = null;
+  const rows = await loadBundledRows();
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const maxOffset = TOTAL_ROWS - BATCH - 1;
-    const offset = Math.floor(Math.random() * maxOffset);
-    const rows = await fetchBatch(offset);
+  const ranked = rows
+    .map((row) => ({ row, score: scoreRow(row, scenario.id) }))
+    .filter((item) => item.score > -999)
+    .sort((a, b) => b.score - a.score);
 
-    for (const item of rows) {
-      const score = scoreRow(item.row, scenario.id);
-      if (!best || score > best.score) {
-        if (score > -999) best = { score, persona: toPersona(item.row) };
-      }
-    }
+  if (!ranked.length) throw new Error("JMED_NO_ELIGIBLE_PERSONA");
 
-    if (best && best.score >= 17) break;
-  }
-
-  if (!best) throw new Error("JMED_NO_ELIGIBLE_PERSONA");
-  return best.persona;
+  const top = ranked.slice(0, Math.min(30, ranked.length));
+  const selected = top[Math.floor(Math.random() * top.length)];
+  return toPersona(selected.row);
 }
 
 export function withPersona(scenario: Scenario, persona: Persona): Scenario {
