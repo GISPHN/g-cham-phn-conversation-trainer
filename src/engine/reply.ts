@@ -7,7 +7,7 @@ const compact = (text: string) => text.replace(/\s+/g, "");
 
 const topicGroups = [
   ["仕事", "勤務", "職業", "働", "忙しい", "残業"],
-  ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子"],
+  ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子", "野菜", "果物", "肉", "魚", "主食", "米", "ご飯", "パン", "麺", "たんぱく"],
   ["運動", "歩く", "歩行", "身体活動", "体を動か", "運動習慣"],
   ["お酒", "飲酒", "アルコール", "ビール", "晩酌"],
   ["たばこ", "タバコ", "喫煙"],
@@ -41,10 +41,10 @@ function detectIntent(text: string): Intent {
   if (hasAny(t, ["こんにちは", "よろしく", "はじめまして", "おはよう", "こんばんは"])) return "greeting";
   if (hasAny(t, ["何が気になる", "どこが気になる", "気になっている", "心配", "不安"])) return "concern";
   if (hasAny(t, ["困って", "難しい", "できない理由", "障害", "妨げ", "大変"])) return "barrier";
-  if (hasAny(t, ["変えられそう", "できそう", "取り組めそう", "始められそう", "何ならできる"])) return "change";
+  if (hasAny(t, ["変えられそう", "できそう", "できますか", "できるでしょう", "可能", "取り組めそう", "始められそう", "何ならできる", "増やせ", "減らせ", "変えられ"])) return "change";
   if (hasAny(t, ["大切", "楽しみ", "続けたい", "目標", "どうなりたい", "価値"])) return "importance";
   if (hasAny(t, ["仕事", "勤務", "職業", "働", "忙しい", "残業"])) return "work";
-  if (hasAny(t, ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子"])) return "diet";
+  if (hasAny(t, ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子", "野菜", "果物", "肉", "魚", "主食", "米", "ご飯", "パン", "麺", "たんぱく"])) return "diet";
   if (hasAny(t, ["運動", "歩く", "歩行", "身体活動", "体を動か", "運動習慣"])) return "exercise";
   if (hasAny(t, ["お酒", "飲酒", "アルコール", "ビール", "晩酌"])) return "alcohol";
   if (hasAny(t, ["たばこ", "タバコ", "喫煙"])) return "smoking";
@@ -89,6 +89,168 @@ function splitFacts(text: string): string[] {
     .split(/[。\n]/)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+type DietSubtopic =
+  | "breakfast"
+  | "lunch"
+  | "dinner"
+  | "vegetables"
+  | "fruit"
+  | "meat"
+  | "fish"
+  | "staple"
+  | "snack"
+  | "eatingOut"
+  | "protein"
+  | "general";
+
+function detectDietSubtopic(text: string): DietSubtopic {
+  const t = compact(text);
+  if (hasAny(t, ["朝食", "朝ごはん", "朝ご飯"])) return "breakfast";
+  if (hasAny(t, ["昼食", "昼ごはん", "昼ご飯", "ランチ"])) return "lunch";
+  if (hasAny(t, ["夕食", "晩ごはん", "夕ご飯", "夕飯"])) return "dinner";
+  if (hasAny(t, ["野菜", "サラダ"])) return "vegetables";
+  if (hasAny(t, ["果物", "フルーツ"])) return "fruit";
+  if (hasAny(t, ["肉", "肉料理"])) return "meat";
+  if (hasAny(t, ["魚", "魚料理"])) return "fish";
+  if (hasAny(t, ["主食", "米", "ご飯", "パン", "麺"])) return "staple";
+  if (hasAny(t, ["間食", "お菓子", "菓子", "おやつ"])) return "snack";
+  if (hasAny(t, ["外食", "惣菜", "弁当"])) return "eatingOut";
+  if (hasAny(t, ["たんぱく", "タンパク", "蛋白"])) return "protein";
+  return "general";
+}
+
+function dietKeywords(subtopic: DietSubtopic): string[] {
+  const map: Record<DietSubtopic, string[]> = {
+    breakfast: ["朝食", "朝ごはん", "朝ご飯"],
+    lunch: ["昼食", "昼ごはん", "昼ご飯", "ランチ"],
+    dinner: ["夕食", "晩ごはん", "夕ご飯", "夕飯"],
+    vegetables: ["野菜", "サラダ"],
+    fruit: ["果物", "フルーツ"],
+    meat: ["肉", "肉料理"],
+    fish: ["魚", "魚料理"],
+    staple: ["主食", "米", "ご飯", "パン", "麺"],
+    snack: ["間食", "お菓子", "菓子", "おやつ"],
+    eatingOut: ["外食", "惣菜", "弁当", "調理済み"],
+    protein: ["たんぱく", "タンパク", "蛋白", "卵", "乳製品", "肉", "魚"],
+    general: [],
+  };
+  return map[subtopic];
+}
+
+function matchingDietFacts(diet: string, subtopic: DietSubtopic): string[] {
+  const facts = splitFacts(diet);
+  if (subtopic === "general") return facts;
+  const words = dietKeywords(subtopic);
+  return facts.filter((fact) => hasAny(compact(fact), words));
+}
+
+function asksForSpecificDetail(text: string): boolean {
+  const t = compact(text);
+  return hasAny(t, [
+    "どんな",
+    "何を",
+    "具体的",
+    "種類",
+    "どれくらい",
+    "何回",
+    "何個",
+    "何皿",
+    "量は",
+  ]);
+}
+
+function asksForChangeFeasibility(text: string): boolean {
+  const t = compact(text);
+  return hasAny(t, [
+    "できますか",
+    "できそう",
+    "できるでしょう",
+    "可能",
+    "増やせ",
+    "減らせ",
+    "変えられ",
+    "取り組め",
+    "始められ",
+  ]);
+}
+
+function personaConsistentUnknownReply(s: Scenario): string {
+  if (s.persona.healthLiteracy === "高") {
+    return "そこまでは普段あまり細かく記録していないので、今ははっきりとは答えにくいです。";
+  }
+  if (s.persona.talkativeness === "low") {
+    return "そこまではあまり意識していないです。";
+  }
+  return "そこまではあまり意識していないので、具体的にはちょっと答えにくいです。";
+}
+
+function changeFeasibilityReply(
+  s: Scenario,
+  st: ConversationState,
+  topicLabel: string,
+  explicitFacts: string[],
+  messages: Message[]
+): string {
+  const feasibility =
+    st.confidence +
+    st.readiness * 0.35 +
+    st.socialSupport * 0.1 -
+    st.structuralBarrier * 0.35 -
+    st.timeConstraint * 0.2;
+
+  const context = explicitFacts[0] ?? "";
+
+  if (
+    st.decisionStatus === "self_selected_goal" ||
+    (feasibility >= 45 && st.resistance < 55)
+  ) {
+    return styleReply(
+      s,
+      `${topicLabel}について、無理のない範囲なら少し変えてみてもよいと思っています`,
+      context ? [context] : [],
+      messages
+    );
+  }
+
+  if (
+    st.decisionStatus === "considering" ||
+    st.decisionStatus === "tentative_decision" ||
+    feasibility >= 20
+  ) {
+    return styleReply(
+      s,
+      `${topicLabel}を少し変えることならできるかもしれませんが、毎日のこととして続けられるかはまだ自信がありません`,
+      context ? [context] : [],
+      messages
+    );
+  }
+
+  return styleReply(
+    s,
+    `${topicLabel}を変えた方がよいのは分かりますが、今すぐ続けると決めるのは難しいです`,
+    context ? [context] : [],
+    messages
+  );
+}
+
+function dietTopicLabel(subtopic: DietSubtopic): string {
+  const labels: Record<DietSubtopic, string> = {
+    breakfast: "朝食",
+    lunch: "昼食",
+    dinner: "夕食",
+    vegetables: "野菜",
+    fruit: "果物",
+    meat: "肉料理",
+    fish: "魚料理",
+    staple: "主食",
+    snack: "間食",
+    eatingOut: "外食",
+    protein: "たんぱく質のとり方",
+    general: "食事",
+  };
+  return labels[subtopic];
 }
 
 function recentClientTexts(messages: Message[]): string[] {
@@ -145,7 +307,38 @@ function topicReply(
     ], messages);
   }
 
-  if (intent === "diet" && p.diet) {
+  const dietMentioned =
+    intent === "diet" ||
+    hasAny(compact(text), ["野菜", "果物", "肉", "魚", "主食", "米", "ご飯", "パン", "麺", "たんぱく"]);
+
+  if (dietMentioned && p.diet) {
+    const subtopic = detectDietSubtopic(text);
+    const matchedFacts = matchingDietFacts(p.diet, subtopic);
+
+    if (asksForChangeFeasibility(text)) {
+      return changeFeasibilityReply(
+        s,
+        st,
+        dietTopicLabel(subtopic),
+        matchedFacts,
+        messages
+      );
+    }
+
+    if (matchedFacts.length > 0) {
+      const base = chooseNonRepeated(matchedFacts, messages);
+      return styleReply(
+        s,
+        base,
+        matchedFacts.filter((x) => x !== base),
+        messages
+      );
+    }
+
+    if (subtopic !== "general" || asksForSpecificDetail(text)) {
+      return personaConsistentUnknownReply(s);
+    }
+
     const facts = splitFacts(p.diet);
     const base = chooseNonRepeated(facts, messages);
     return styleReply(s, base, facts.filter((x) => x !== base), messages);
