@@ -330,8 +330,10 @@ export default function App() {
           );
         }
       } else {
-        replyText =
-          "そのあたりはもう少し具体的にお話しできますが、今は詳細な対象者設定を生成するローカルAIが準備されていません。";
+        setAIProgress(
+          "詳細な生活設定の生成にはローカルAIを有効にしてください。現在はJMED-Personasに明示された情報のみで応答しています。"
+        );
+        replyText = groundedSeed;
       }
     } else {
       const useAI = aiStatus === "ready" && !shouldBypassAI(text);
