@@ -271,7 +271,10 @@ export function generatePersonaConsistentFallbackDetail(
 
 
 function parseJapaneseDigit(value: string): number | null {
-  if (/^\d+$/.test(value)) return Number(value);
+  const normalized = value.replace(/[０-９]/g, (char) =>
+    String.fromCharCode(char.charCodeAt(0) - 0xfee0)
+  );
+  if (/^\d+$/.test(normalized)) return Number(normalized);
   const map: Record<string, number> = {
     一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7,
   };
@@ -284,16 +287,22 @@ function extractCurrentVegetableDays(memory: PersonaSessionMemory): number | nul
     .map(([, value]) => value);
 
   for (const text of candidates) {
-    const positive = text.match(/野菜.{0,12}週(?:に)?([0-7一二三四五六七])日/);
-    if (positive) {
-      const n = parseJapaneseDigit(positive[1]);
-      if (n !== null) return n;
-    }
-
-    const negative = text.match(/(?:食べない|ほとんど食べない).{0,8}週(?:に)?([0-7一二三四五六七])日/);
+    // Negative-day expressions must be interpreted first:
+    // "野菜を食べない日は週2日" means eating vegetables about 5 days/week.
+    const negative = text.match(
+      /(?:食べない|ほとんど食べない|十分に取れない).{0,12}週(?:に)?([0-7０-７一二三四五六七])日/
+    );
     if (negative) {
       const n = parseJapaneseDigit(negative[1]);
       if (n !== null) return Math.max(0, 7 - n);
+    }
+
+    const positive = text.match(
+      /野菜.{0,12}週(?:に)?([0-7０-７一二三四五六七])日/
+    );
+    if (positive) {
+      const n = parseJapaneseDigit(positive[1]);
+      if (n !== null) return n;
     }
   }
 
