@@ -1,4 +1,136 @@
-import {ConversationState,Message,Scenario,TurnAnalysis} from "../domain/types";
-export type AIReplyInput={scenario:Scenario;state:ConversationState;analysis:TurnAnalysis;messages:Message[]};
-export interface DialogueAI{id:string;name:string;available():Promise<boolean>;reply(input:AIReplyInput):Promise<string>}
-/* WebLLMは将来ここへ実装。JMED-Personasは背景、stateは状態遷移エンジンが管理し、対象者AIと教育評価AIは分離する。 */
+import * as webllm from "@mlc-ai/web-llm";
+import { ConversationState, Message, Scenario, TurnAnalysis } from "../domain/types";
+
+export type AIReplyInput = {
+  scenario: Scenario;
+  state: ConversationState;
+  analysis: TurnAnalysis;
+  messages: Message[];
+  latestUserText: string;
+};
+
+export type AIProgress = {
+  text: string;
+  progress?: number;
+};
+
+const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+
+let engine: webllm.MLCEngineInterface | null = null;
+let loadingPromise: Promise<webllm.MLCEngineInterface> | null = null;
+
+export function isWebGPUSupported(): boolean {
+  return typeof navigator !== "undefined" && "gpu" in navigator;
+}
+
+export function getLocalModelId(): string {
+  return MODEL_ID;
+}
+
+export async function initLocalAI(
+  onProgress?: (progress: AIProgress) => void
+): Promise<webllm.MLCEngineInterface> {
+  if (engine) return engine;
+  if (loadingPromise) return loadingPromise;
+
+  loadingPromise = webllm.CreateMLCEngine(MODEL_ID, {
+    initProgressCallback: (report) => {
+      onProgress?.({
+        text: report.text,
+        progress: typeof report.progress === "number" ? report.progress : undefined,
+      });
+    },
+    logLevel: "WARN",
+  });
+
+  try {
+    engine = await loadingPromise;
+    return engine;
+  } finally {
+    loadingPromise = null;
+  }
+}
+
+function personaPrompt(s: Scenario, st: ConversationState): string {
+  const p = s.persona;
+  return `
+あなたは特定保健指導を受ける日本人の対象者です。保健師ではありません。
+以下の人物として自然な日本語で応答してください。
+
+【人物背景】
+年齢: ${p.age}歳
+性別: ${p.sex}
+職業: ${p.occupation}
+健康リテラシー: ${p.healthLiteracy}
+経済的制約: ${p.economicConstraint}
+世帯: ${p.household}
+家族関係: ${p.familyRelationship}
+喫煙: ${p.smoking}
+飲酒: ${p.alcohol}
+運動: ${p.exercise}
+食生活: ${p.diet}
+睡眠: ${p.sleep}
+本人が大切にしていること: ${p.values}
+
+【今回の健診・支援場面】
+${s.publicContext.join("。")}
+
+【本人だけが知っている背景】
+${s.hiddenContext.join("。")}
+
+【現在の会話状態】
+信頼 ${st.trust}/100
+行動準備性 ${st.readiness}/100
+抵抗 ${st.resistance}/100
+自己効力感 ${st.selfEfficacy}/100
+情報開示 ${st.disclosure}/100
+健康への関心 ${st.concern}/100
+
+【厳守】
+- 対象者としてのみ返答する。保健師を指導・評価しない。
+- 1回の返答は原則1〜3文。
+- 質問された内容に直接答える。
+- 上記にない病名、検査値、家族歴、服薬、生活歴を作らない。
+- 本人だけが知っている背景は、保健師が関連する質問をした場合、または情報開示が十分高まった場合だけ話す。
+- 抵抗が高い時は簡単に同意しない。
+- 行動準備性や自己効力感が低い時は、すぐに具体的な目標を約束しない。
+- 日本の実際の保健指導場面として不自然な説明口調を避ける。
+`.trim();
+}
+
+export async function generateLocalAIReply(input: AIReplyInput): Promise<string> {
+  if (!engine) throw new Error("LOCAL_AI_NOT_READY");
+
+  const recent = input.messages.slice(-8).map((m) => ({
+    role: m.role === "phn" ? ("user" as const) : ("assistant" as const),
+    content: m.text,
+  }));
+
+  const messages: webllm.ChatCompletionMessageParam[] = [
+    { role: "system", content: personaPrompt(input.scenario, input.state) },
+    ...recent,
+    { role: "user", content: input.latestUserText },
+  ];
+
+  const response = await engine.chat.completions.create({
+    messages,
+    temperature: 0.65,
+    top_p: 0.9,
+    max_tokens: 120,
+    repetition_penalty: 1.05,
+  });
+
+  if ("choices" in response) {
+    const text = response.choices[0]?.message?.content?.trim();
+    if (text) return text;
+  }
+
+  throw new Error("LOCAL_AI_EMPTY_REPLY");
+}
+
+export async function unloadLocalAI(): Promise<void> {
+  if (engine) {
+    await engine.unload();
+    engine = null;
+  }
+}
