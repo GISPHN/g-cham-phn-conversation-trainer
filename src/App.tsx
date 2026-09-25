@@ -12,10 +12,16 @@ import {
 import { buildFeedback } from "./engine/feedback";
 import {
   generateLocalAIReply,
+  generatePersonaDetail,
   getLocalModelId,
   initLocalAI,
   isWebGPUSupported,
 } from "./ai/adapter";
+import {
+  detectPersonaDetailRequest,
+  personaEvidenceForDetail,
+  PersonaSessionMemory,
+} from "./engine/personaMemory";
 
 const numericStateKeys = [
   "trust",
@@ -116,6 +122,7 @@ export default function App() {
   const [aiProgress, setAIProgress] = useState("");
   const [aiProgressValue, setAIProgressValue] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [sessionMemory, setSessionMemory] = useState<PersonaSessionMemory>({});
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
@@ -179,6 +186,7 @@ export default function App() {
     setListening(false);
     setSpeechStatus("");
     setGenerating(false);
+    setSessionMemory({});
   };
 
   const loadPersonaAndStart = async (selected = baseScenario) => {
@@ -204,6 +212,7 @@ export default function App() {
       setListening(false);
       setSpeechStatus("");
       setGenerating(false);
+      setSessionMemory({});
     } catch (error) {
       console.error(error);
       setActivePersona(selected.persona);
@@ -226,6 +235,7 @@ export default function App() {
     setState(selected.initialState);
     setStarted(false);
     setFinished(false);
+    setSessionMemory({});
   };
 
   const enableLocalAI = async () => {
@@ -276,31 +286,66 @@ export default function App() {
     setInput("");
     setGenerating(true);
 
-    const groundedSeed = buildGroundedReplySeed(
-      scenario,
-      nextState,
-      analysis,
-      turn,
-      text,
-      messages
-    );
+    const detailRequest = detectPersonaDetailRequest(text);
+    const rememberedDetail = detailRequest
+      ? sessionMemory[detailRequest.key]
+      : undefined;
+
+    let groundedSeed =
+      rememberedDetail ??
+      buildGroundedReplySeed(
+        scenario,
+        nextState,
+        analysis,
+        turn,
+        text,
+        messages
+      );
 
     let replyText = groundedSeed;
-    const useAI = aiStatus === "ready" && !shouldBypassAI(text);
 
-    if (useAI) {
+    if (detailRequest && !rememberedDetail && aiStatus === "ready") {
       try {
-        replyText = await generateLocalAIReply({
+        const generatedDetail = await generatePersonaDetail({
           scenario,
           state: nextState,
-          analysis,
           messages,
           latestUserText: text,
-          groundedSeed,
+          request: detailRequest,
+          evidence: personaEvidenceForDetail(scenario, detailRequest),
+          sessionMemory,
         });
+
+        setSessionMemory((prev) => ({
+          ...prev,
+          [detailRequest.key]: generatedDetail,
+        }));
+        groundedSeed = generatedDetail;
+        replyText = generatedDetail;
       } catch (error) {
-        console.warn("AI reply rejected; using grounded reply.", error);
-        replyText = groundedSeed;
+        console.warn(
+          "Persona detail generation rejected; using grounded reply.",
+          error
+        );
+      }
+    } else {
+      const useAI = aiStatus === "ready" && !shouldBypassAI(text);
+
+      if (useAI) {
+        try {
+          replyText = await generateLocalAIReply({
+            scenario,
+            state: nextState,
+            analysis,
+            messages,
+            latestUserText: text,
+            groundedSeed,
+            sessionMemory,
+          });
+        } catch (error) {
+          console.warn("AI reply rejected; using grounded reply.", error);
+          replyText = groundedSeed;
+        }
       }
     }
 
@@ -383,7 +428,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.0</span>
+        <span className="badge">MVP 0.5.1</span>
       </header>
 
       <section className="panel">
