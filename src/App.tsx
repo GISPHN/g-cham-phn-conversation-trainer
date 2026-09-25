@@ -20,6 +20,7 @@ import {
 } from "./ai/adapter";
 import {
   detectPersonaDetailRequest,
+  generatePersonaConsistentFallbackDetail,
   personaEvidenceForDetail,
   PersonaSessionMemory,
 } from "./engine/personaMemory";
@@ -343,10 +344,25 @@ export default function App() {
         replyText = normalizedDetail;
       } catch (error) {
         console.warn(
-          "Persona detail generation rejected; using grounded reply.",
+          "Persona detail generation failed; using persona-consistent fallback.",
           error
         );
-        setAIStatus("error");
+        const fallbackDetail = normalizeClientSpeech(
+          generatePersonaConsistentFallbackDetail(
+            scenario,
+            detailRequest,
+            sessionMemory
+          )
+        );
+        setSessionMemory((prev) => ({
+          ...prev,
+          [detailRequest.key]: fallbackDetail,
+        }));
+        groundedSeed = fallbackDetail;
+        replyText = fallbackDetail;
+        setAIProgress(
+          "詳細な生活設定は、対象者背景に整合する代替生成で補完しました。"
+        );
       }
     } else {
       const useAI = aiStatus === "ready" && !shouldBypassAI(text);
@@ -449,7 +465,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.3</span>
+        <span className="badge">MVP 0.5.4</span>
       </header>
 
       <section className="panel">
