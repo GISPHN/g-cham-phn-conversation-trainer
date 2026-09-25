@@ -69,13 +69,14 @@ function nextDecisionStatus(
     state.resistance * 0.2 +
     state.socialSupport * 0.15;
 
+  // A PHN proposal alone must not be treated as a self-selected goal.
   if (
-    analysis.goalSetting &&
+    analysis.elicitsGoal &&
     state.readiness >= 65 &&
     state.importance >= 60 &&
     feasibility >= 25
   ) {
-    return "self_selected_goal";
+    return "tentative_decision";
   }
 
   if (
@@ -140,9 +141,21 @@ export function updateState(
     concern += 3;
     importance += 6;
   }
-  if (analysis.goalSetting && readiness >= 45) {
-    selfEfficacy += 4;
-    confidence += structuralBarrier >= 70 ? 1 : 5;
+  if (analysis.elicitsGoal && readiness >= 40) {
+    readiness += 2;
+    selfEfficacy += 3;
+    confidence += structuralBarrier >= 70 ? 1 : 4;
+  }
+
+  if (analysis.behaviorProposal && analysis.autonomySupport) {
+    // A concrete suggestion can clarify feasibility, but does not itself mean
+    // the client has decided to act.
+    confidence += readiness >= 45 ? 2 : 0;
+  }
+
+  if (analysis.checkupOpening) {
+    trust += 1;
+    disclosure += 1;
   }
   if (analysis.directive && !analysis.autonomySupport) {
     resistance += 7;
@@ -183,4 +196,46 @@ export function updateState(
     ...provisional,
     decisionStatus: nextDecisionStatus(provisional, analysis),
   };
+}
+
+
+export function updateStateFromClientReaction(
+  previous: ConversationState,
+  analysis: TurnAnalysis,
+  clientText: string
+): ConversationState {
+  let next = { ...previous };
+  const t = clientText.replace(/\s+/g, "");
+
+  const clearAcceptance =
+    /やってみます|やってみたい|それならできそう|続けられそう|始めてみます|目標にします|やろうと思います/.test(t);
+  const tentative =
+    /できるかもしれ|やってみてもいい|考えてみたい|少しなら|そのくらいなら/.test(t);
+  const reluctance =
+    /難しい|自信がない|自信ありません|今は.*決め|まだ.*決め|できるか分から/.test(t);
+
+  if (analysis.elicitsGoal && clearAcceptance) {
+    next.decisionStatus = "self_selected_goal";
+    next.readiness = clamp(next.readiness + 5);
+    next.selfEfficacy = clamp(next.selfEfficacy + 5);
+    next.confidence = clamp(next.confidence + 5);
+    return next;
+  }
+
+  if (analysis.behaviorProposal) {
+    if (clearAcceptance) {
+      next.decisionStatus = "tentative_decision";
+      next.readiness = clamp(next.readiness + 4);
+      next.confidence = clamp(next.confidence + 4);
+    } else if (tentative) {
+      next.decisionStatus = "considering";
+      next.readiness = clamp(next.readiness + 2);
+      next.confidence = clamp(next.confidence + 2);
+    } else if (reluctance) {
+      next.decisionStatus = "ambivalent";
+      next.confidence = clamp(next.confidence - 1);
+    }
+  }
+
+  return next;
 }
