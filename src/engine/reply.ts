@@ -134,3 +134,14 @@ export function generateRuleBasedReply(
 
   return "そうですね。もう少し具体的に聞いてもらえればお話しできると思います。";
 }
+
+
+export function buildGroundedReplySeed(
+  s: Scenario,
+  st: ConversationState,
+  a: TurnAnalysis,
+  turn: number,
+  userText = ""
+): string {
+  return generateRuleBasedReply(s, st, a, turn, userText);
+}
