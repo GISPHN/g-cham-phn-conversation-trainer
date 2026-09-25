@@ -54,7 +54,44 @@ function normalizeLiteracy(value: string): "低" | "中" | "高" {
   return "中";
 }
 
+function deriveTalkativeness(row: JmedRow): "low" | "medium" | "high" {
+  const utterance = str(row, "患者の語り/代表発話");
+  const social = str(row, "社会参加・孤立");
+  const bigFive = str(row, "BIG FIVE性格特性");
+
+  let score = 0;
+
+  if (utterance.length >= 80) score += 2;
+  else if (utterance.length >= 45) score += 1;
+  else if (utterance.length <= 20) score -= 2;
+
+  if (/外向的|社交的|積極的|交流.*多|参加.*多|友人.*多/.test(bigFive + social)) score += 2;
+  if (/内向的|孤立|交流.*少|参加.*少|人付き合い.*少/.test(bigFive + social)) score -= 2;
+
+  if (/外向性.{0,12}(高|4|5)/.test(bigFive)) score += 2;
+  if (/外向性.{0,12}(低|1|2)/.test(bigFive)) score -= 2;
+
+  if (score >= 2) return "high";
+  if (score <= -2) return "low";
+  return "medium";
+}
+
+function deriveInitiative(
+  row: JmedRow,
+  talkativeness: "low" | "medium" | "high"
+): "low" | "medium" | "high" {
+  const bigFive = str(row, "BIG FIVE性格特性");
+  const social = str(row, "社会参加・孤立");
+
+  if (/積極的|主体的|外向的|社交的/.test(bigFive + social)) return "high";
+  if (/消極的|内向的|孤立/.test(bigFive + social)) return "low";
+  return talkativeness === "high" ? "high" : talkativeness === "low" ? "low" : "medium";
+}
+
 function toPersona(row: JmedRow): Persona {
+  const talkativeness = deriveTalkativeness(row);
+  const initiative = deriveInitiative(row, talkativeness);
+
   return {
     id: str(row, "患者ID") || crypto.randomUUID(),
     age: num(row, "年齢"),
@@ -80,6 +117,8 @@ function toPersona(row: JmedRow): Persona {
     checkupHistory: str(row, "健診歴"),
     source: "JMED-Personas",
     sourceId: str(row, "患者ID"),
+    talkativeness,
+    initiative,
   };
 }
 
