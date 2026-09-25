@@ -623,11 +623,30 @@ function topicReply(
   }
 
   if (intent === "change") {
-    const candidates = [
-      p.exercise ? `運動については、${p.exercise}の中で少し変えられることがあるかもしれません` : "",
-      p.diet ? `食事については、全部ではなく一つなら変えられるかもしれません` : "",
-      "今の生活を全部変えるのは難しいですが、無理のない範囲なら考えてみたいです",
-    ].filter(Boolean);
+    const t = compact(text);
+    let candidates: string[] = [];
+
+    if (/食事|野菜|朝食|昼食|夕食|間食|食べ/.test(t)) {
+      candidates = [
+        p.diet ? "食事なら、全部を変えるより一つだけなら考えられそうです" : "",
+        /野菜/.test(t)
+          ? "野菜なら、食べる回数を少し増やすくらいなら考えられるかもしれません"
+          : "",
+        "仕事の日でも無理なくできる内容なら、少しずつ試してみたいです",
+      ].filter(Boolean);
+    } else if (/運動|歩/.test(t)) {
+      candidates = [
+        p.exercise ? `運動については、${p.exercise}の中で少し変えられることがあるかもしれません` : "",
+        "まとまった時間ではなく、短い時間なら考えられるかもしれません",
+      ].filter(Boolean);
+    } else {
+      candidates = [
+        "今の生活を全部変えるのは難しいですが、無理のない範囲なら考えてみたいです",
+        p.diet ? "食事なら一つだけ変えることは考えられそうです" : "",
+        p.exercise ? "運動も、できる範囲なら考えてみたいです" : "",
+      ].filter(Boolean);
+    }
+
     const base = chooseNonRepeated(candidates, messages);
     return styleReply(s, base, candidates.filter((x) => x !== base), messages);
   }
