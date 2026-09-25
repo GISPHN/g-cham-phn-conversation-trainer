@@ -11,12 +11,6 @@ import {
   initLocalAI,
   isWebGPUSupported,
 } from "./ai/adapter";
-import {
-  initNaturalTTS,
-  naturalTTSReady,
-  speakNaturalJapanese,
-  stopNaturalTTS,
-} from "./tts/naturalTts";
 
 const names: Record<keyof ConversationState, string> = {
   trust: "信頼",
@@ -57,7 +51,6 @@ declare global {
 }
 
 type AIStatus = "off" | "loading" | "ready" | "error";
-type TTSStatus = "browser" | "loading" | "natural" | "error";
 
 export default function App() {
   const [id, setId] = useState(scenarios[0].id);
@@ -75,8 +68,6 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [speechStatus, setSpeechStatus] = useState("");
   const [readAloud, setReadAloud] = useState(true);
-  const [ttsStatus, setTTSStatus] = useState<TTSStatus>("browser");
-  const [ttsMessage, setTTSMessage] = useState("");
   const [aiStatus, setAIStatus] = useState<AIStatus>("off");
   const [aiProgress, setAIProgress] = useState("");
   const [aiProgressValue, setAIProgressValue] = useState<number | null>(null);
@@ -102,55 +93,29 @@ export default function App() {
     });
   }, [messages, generating]);
 
-  const speakClient = async (text: string) => {
-    if (!readAloud || !text) return;
-
-    if (ttsStatus === "natural" && naturalTTSReady()) {
-      try {
-        if (synthesisSupported) window.speechSynthesis.cancel();
-    stopNaturalTTS();
-        await speakNaturalJapanese(text, scenario.persona.sex);
-        return;
-      } catch (error) {
-        console.error(error);
-        setTTSStatus("error");
-        setTTSMessage("自然音声の再生に失敗したため、標準音声に切り替えます。");
-      }
-    }
-
-    if (!synthesisSupported) return;
+  const speakClient = (text: string) => {
+    if (!readAloud || !synthesisSupported || !text) return;
 
     window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ja-JP";
-    utterance.rate = 0.95;
-    utterance.pitch = scenario.persona.sex.includes("男性") ? 0.92 : 1.02;
+    utterance.rate = 1.02;
+    utterance.pitch = scenario.persona.sex.includes("男性") ? 0.96 : 1.02;
 
-    const voices = window.speechSynthesis.getVoices();
-    const japaneseVoices = voices.filter((voice) =>
-      voice.lang.toLowerCase().startsWith("ja")
-    );
+    const voices = window.speechSynthesis
+      .getVoices()
+      .filter((voice) => voice.lang.toLowerCase().startsWith("ja"));
+
     const preferred =
-      japaneseVoices.find((voice) =>
-        /Nanami|Keita|Kyoko|Otoya|Haruka|Ichiro/i.test(voice.name)
-      ) ?? japaneseVoices[0];
+      voices.find((voice) => /Online.*Natural|Natural/i.test(voice.name)) ??
+      voices.find((voice) => /Nanami|Keita/i.test(voice.name)) ??
+      voices.find((voice) => /Google.*日本語|Google Japanese/i.test(voice.name)) ??
+      voices.find((voice) => /Haruka|Ichiro|Kyoko|Otoya/i.test(voice.name)) ??
+      voices[0];
 
     if (preferred) utterance.voice = preferred;
     window.speechSynthesis.speak(utterance);
-  };
-
-  const enableNaturalVoice = async () => {
-    setTTSStatus("loading");
-    setTTSMessage("自然音声モデルを準備しています。初回はモデルと日本語辞書の読み込みに時間がかかります。");
-    try {
-      await initNaturalTTS();
-      setTTSStatus("natural");
-      setTTSMessage("自然音声を使用します。対象者の性別に応じて日本語音声を切り替えます。");
-    } catch (error) {
-      console.error(error);
-      setTTSStatus("error");
-      setTTSMessage("自然音声を読み込めませんでした。標準音声を使用します。");
-    }
   };
 
   const startTraining = (next = id) => {
@@ -268,7 +233,7 @@ export default function App() {
     const clientMessage: Message = { role: "client", text: replyText };
     setMessages((prev) => [...prev, clientMessage]);
     setGenerating(false);
-    void speakClient(replyText);
+    speakClient(replyText);
   };
 
   const toggleSpeech = () => {
@@ -352,7 +317,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.3</span>
+        <span className="badge">MVP 0.3.1</span>
       </header>
 
       <section className="panel">
@@ -417,29 +382,15 @@ export default function App() {
               checked={readAloud}
               onChange={(e) => {
                 setReadAloud(e.target.checked);
-                if (!e.target.checked) {
-                  if (synthesisSupported) window.speechSynthesis.cancel();
-                  stopNaturalTTS();
+                if (!e.target.checked && synthesisSupported) {
+                  window.speechSynthesis.cancel();
                 }
               }}
             />
             対象者の発言を読み上げる
           </label>
-
-          <button
-            className={ttsStatus === "natural" ? "aiReady" : "secondary"}
-            onClick={() => void enableNaturalVoice()}
-            disabled={ttsStatus === "loading" || ttsStatus === "natural"}
-          >
-            {ttsStatus === "loading"
-              ? "自然音声を準備中…"
-              : ttsStatus === "natural"
-              ? "自然音声 使用中"
-              : "自然音声を有効にする"}
-          </button>
         </div>
 
-        {ttsMessage && <p className="small">{ttsMessage}</p>}
 
         {aiProgress && (
           <div className="aiProgress">
@@ -499,7 +450,7 @@ export default function App() {
                       <button
                         className="speakAgain"
                         type="button"
-                        onClick={() => void speakClient(x.text)}
+                        onClick={() => speakClient(x.text)}
                         title="この発言をもう一度読み上げる"
                       >
                         🔊
@@ -578,8 +529,7 @@ export default function App() {
                         if (synthesisSupported) {
                           window.speechSynthesis.cancel();
                         }
-                        stopNaturalTTS();
-                      }}
+                            }}
                     >
                       面接を終了して振り返る
                     </button>
