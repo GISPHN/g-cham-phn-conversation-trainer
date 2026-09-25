@@ -73,3 +73,22 @@ MVP 0.4 では Hugging Face Dataset Viewer API を通じて `sociocom/JMED-Perso
 MVP 0.4.3 からローカル会話モデルを `Qwen2.5-0.5B-Instruct-q4f16_1-MLC` から `gemma-2-2b-jpn-it-q4f16_1-MLC` へ変更しました。
 
 Gemma 2 2B JPN IT は Google の日本語向け instruction tuned model を WebLLM でブラウザ内実行します。JMED-Personas由来の事実ベース返答案を自然な対象者発話へ整える用途に限定し、新規の病名・数値・服薬情報や支援者側への役割反転が検出された生成は破棄します。
+
+
+## SDOH-aware behavioral state model
+
+MVP 0.5.0 では、対象者が「理解したらすぐ行動する」という単純なモデルを避けるため、会話状態に以下を追加しています。
+
+- importance: 本人にとっての重要度
+- confidence: 実行への自信
+- structuralBarrier: 本人の努力だけでは変えにくい構造的障壁
+- socialSupport: 家族・周囲・地域から得られる支援
+- timeConstraint: 仕事、育児、介護等を含む時間的制約
+- financialConstraint: 経済的制約
+- decisionStatus: 行動についての意思決定状態
+
+JMED-Personas の職業、経済的制約、世帯、家族関係、社会参加等から初期状態の一部を派生させます。保健師との会話により trust、disclosure、importance、confidence、readiness 等は変化しますが、時間・経済・社会的支援などの構造要因は、良い声かけだけで消えるものとして扱いません。
+
+意思決定は `not_considering` → `ambivalent` → `considering` → `tentative_decision` → `self_selected_goal` の段階で表現します。構造的障壁が大きい場合は、十分な支援を行っても面接中に行動目標へ到達しないことがあります。その場合でも、信頼形成、情報開示、重要度や自信の変化、次回支援につながる対話を教育的成果として評価します。
+
+この状態モデルは教育用シミュレーションであり、実在する対象者の心理状態や行動変容ステージを診断する尺度ではありません。
