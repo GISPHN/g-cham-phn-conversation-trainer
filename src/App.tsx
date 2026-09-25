@@ -3,7 +3,11 @@ import { scenarios } from "./data/scenarios";
 import { loadJmedPersona, withPersona } from "./data/jmed";
 import { ConversationState, Message, Persona, TurnAnalysis } from "./domain/types";
 import { analyzeTurn } from "./engine/analyze";
-import { deriveInitialState, updateState } from "./engine/state";
+import {
+  deriveInitialState,
+  updateState,
+  updateStateFromClientReaction,
+} from "./engine/state";
 import {
   buildGroundedReplySeed,
   generateRuleBasedReply,
@@ -124,10 +128,12 @@ export default function App() {
   const [aiProgress, setAIProgress] = useState("");
   const [aiProgressValue, setAIProgressValue] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [thinkingFiller, setThinkingFiller] = useState("");
   const [sessionMemory, setSessionMemory] = useState<PersonaSessionMemory>({});
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const thinkingTimerRefs = useRef<number[]>([]);
 
   const speechSupported =
     typeof window !== "undefined" &&
@@ -144,7 +150,7 @@ export default function App() {
     requestAnimationFrame(() => {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     });
-  }, [messages, generating]);
+  }, [messages, generating, thinkingFiller]);
 
   useEffect(() => {
     setActivePersona(baseScenario.persona);
@@ -177,7 +183,43 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const clearThinkingFillers = () => {
+    thinkingTimerRefs.current.forEach((timer) => window.clearTimeout(timer));
+    thinkingTimerRefs.current = [];
+    setThinkingFiller("");
+  };
+
+  const startThinkingFillers = (
+    userText: string,
+    currentState: ConversationState
+  ) => {
+    clearThinkingFillers();
+
+    const isDecisionQuestion =
+      /できますか|できると思いますか|できそうですか|どうでしょう|やってみませんか|目標|増やす|減らす/.test(
+        userText
+      );
+
+    const fillers =
+      currentState.resistance >= 65 && isDecisionQuestion
+        ? ["うーん…", "そうですね…", "えーと…"]
+        : scenario.persona.talkativeness === "low"
+        ? ["えーと…", "そうですね…"]
+        : ["そうですね…", "えーと…", "そうですね、ちょっと考えますね…"];
+
+    const delays = [850, 3400, 6800];
+
+    fillers.forEach((filler, index) => {
+      const timer = window.setTimeout(() => {
+        setThinkingFiller(filler);
+        speakClient(filler);
+      }, delays[index] ?? 6800);
+      thinkingTimerRefs.current.push(timer);
+    });
+  };
+
   const resetConversation = (selected = baseScenario) => {
+    clearThinkingFillers();
     if (synthesisSupported) window.speechSynthesis.cancel();
     setMessages([]);
     setAnalyses([]);
@@ -188,6 +230,7 @@ export default function App() {
     setListening(false);
     setSpeechStatus("");
     setGenerating(false);
+    setThinkingFiller("");
     setSessionMemory({});
   };
 
@@ -284,9 +327,9 @@ export default function App() {
 
     setMessages((prev) => [...prev, phnMessage]);
     setAnalyses((prev) => [...prev, analysis]);
-    setState(nextState);
     setInput("");
     setGenerating(true);
+    startThinkingFillers(text, nextState);
 
     const detailRequest = detectPersonaDetailRequest(text);
     const rememberedDetail =
@@ -386,7 +429,14 @@ export default function App() {
       }
     }
 
+    clearThinkingFillers();
     const finalReply = normalizeClientSpeech(replyText);
+    const finalState = updateStateFromClientReaction(
+      nextState,
+      analysis,
+      finalReply
+    );
+    setState(finalState);
     setMessages((prev) => [...prev, { role: "client", text: finalReply }]);
     setGenerating(false);
     speakClient(finalReply);
@@ -466,7 +516,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.5</span>
+        <span className="badge">MVP 0.5.6</span>
       </header>
 
       <section className="panel">
@@ -601,7 +651,7 @@ export default function App() {
                 {generating && (
                   <div className="msg client pending">
                     <small>対象者</small>
-                    <p>返答を考えています…</p>
+                    <p>{thinkingFiller || "…"}</p>
                   </div>
                 )}
               </div>
