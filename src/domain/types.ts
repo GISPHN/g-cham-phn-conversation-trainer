@@ -1,4 +1,13 @@
 export type Difficulty = "初級" | "標準" | "上級";
+export type SupportType = "動機付け支援" | "積極的支援";
+export type InitialDecisionStatus = Exclude<DecisionStatus, "self_selected_goal">;
+export type TrainingSelectionMode = "criteria" | "random";
+
+export type TrainingProfile = {
+  difficulty: Difficulty;
+  supportType: SupportType;
+  initialDecisionStatus: InitialDecisionStatus;
+};
 
 export type DecisionStatus =
   | "not_considering"
@@ -55,7 +64,7 @@ export type Scenario = {
   id: string;
   title: string;
   difficulty: Difficulty;
-  supportType: "動機付け支援" | "積極的支援";
+  supportType: SupportType;
   persona: Persona;
   learningObjectives: string[];
   publicContext: string[];
