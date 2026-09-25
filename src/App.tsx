@@ -7,6 +7,7 @@ import { deriveInitialState, updateState } from "./engine/state";
 import {
   buildGroundedReplySeed,
   generateRuleBasedReply,
+  normalizeClientSpeech,
   shouldBypassAI,
 } from "./engine/reply";
 import { buildFeedback } from "./engine/feedback";
@@ -305,35 +306,47 @@ export default function App() {
     let replyText = groundedSeed;
 
     if (detailRequest && !rememberedDetail) {
-      if (aiStatus === "ready") {
-        try {
-          const generatedDetail = await generatePersonaDetail({
-            scenario,
-            state: nextState,
-            messages,
-            latestUserText: text,
-            request: detailRequest,
-            evidence: personaEvidenceForDetail(scenario, detailRequest),
-            sessionMemory,
+      try {
+        if (aiStatus !== "ready") {
+          setAIStatus("loading");
+          setAIProgress("詳細な対象者設定を生成するため、ローカルAIを準備しています…");
+          setAIProgressValue(0);
+          await initLocalAI((progress) => {
+            setAIProgress(progress.text);
+            setAIProgressValue(
+              typeof progress.progress === "number"
+                ? Math.round(progress.progress * 100)
+                : null
+            );
           });
-
-          setSessionMemory((prev) => ({
-            ...prev,
-            [detailRequest.key]: generatedDetail,
-          }));
-          groundedSeed = generatedDetail;
-          replyText = generatedDetail;
-        } catch (error) {
-          console.warn(
-            "Persona detail generation rejected; using grounded reply.",
-            error
-          );
+          setAIStatus("ready");
+          setAIProgress("ローカルAIの準備が完了しました。");
+          setAIProgressValue(100);
         }
-      } else {
-        setAIProgress(
-          "詳細な生活設定の生成にはローカルAIを有効にしてください。現在はJMED-Personasに明示された情報のみで応答しています。"
+
+        const generatedDetail = await generatePersonaDetail({
+          scenario,
+          state: nextState,
+          messages,
+          latestUserText: text,
+          request: detailRequest,
+          evidence: personaEvidenceForDetail(scenario, detailRequest),
+          sessionMemory,
+        });
+
+        const normalizedDetail = normalizeClientSpeech(generatedDetail);
+        setSessionMemory((prev) => ({
+          ...prev,
+          [detailRequest.key]: normalizedDetail,
+        }));
+        groundedSeed = normalizedDetail;
+        replyText = normalizedDetail;
+      } catch (error) {
+        console.warn(
+          "Persona detail generation rejected; using grounded reply.",
+          error
         );
-        replyText = groundedSeed;
+        setAIStatus("error");
       }
     } else {
       const useAI = aiStatus === "ready" && !shouldBypassAI(text);
@@ -356,9 +369,10 @@ export default function App() {
       }
     }
 
-    setMessages((prev) => [...prev, { role: "client", text: replyText }]);
+    const finalReply = normalizeClientSpeech(replyText);
+    setMessages((prev) => [...prev, { role: "client", text: finalReply }]);
     setGenerating(false);
-    speakClient(replyText);
+    speakClient(finalReply);
   };
 
   const toggleSpeech = () => {
@@ -435,7 +449,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.2</span>
+        <span className="badge">MVP 0.5.3</span>
       </header>
 
       <section className="panel">
