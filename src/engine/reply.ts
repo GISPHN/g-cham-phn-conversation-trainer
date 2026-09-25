@@ -206,6 +206,10 @@ function asksForChangeFeasibility(text: string): boolean {
     "できますか",
     "できそう",
     "できるでしょう",
+    "できると思いますか",
+    "できそうですか",
+    "やってみませんか",
+    "どうでしょう",
     "可能",
     "増やせ",
     "減らせ",
@@ -329,6 +333,140 @@ function styleReply(
   return [main, extras[0], extras[1]].filter(Boolean).join("");
 }
 
+function isCheckupConversationOpening(text: string): boolean {
+  const t = compact(text);
+  return (
+    /(特定健診|健診).{0,12}結果.{0,20}(伺|お話|説明|確認|見て|振り返)/.test(t) ||
+    /結果.{0,12}(一緒に見|確認させ|説明させ)/.test(t)
+  );
+}
+
+function checkupOpeningReply(
+  s: Scenario,
+  st: ConversationState,
+  messages: Message[]
+): string {
+  const p = s.persona;
+
+  if (st.resistance >= 65 && st.concern < 60) {
+    return styleReply(
+      s,
+      "はい。ただ、どうして私が保健指導の対象になっているのか、少し気になっています",
+      [],
+      messages
+    );
+  }
+
+  if (st.concern >= 60 || p.healthLiteracy === "高") {
+    return styleReply(
+      s,
+      "はい、お願いします",
+      ["今回の結果で、どこを特に気をつけた方がいいのか知りたいです"],
+      messages
+    );
+  }
+
+  if (p.initiative === "high" && st.readiness < 45) {
+    return styleReply(
+      s,
+      "わかりました",
+      ["ただ、なぜ今回自分が保健指導の対象になったのかは気になります"],
+      messages
+    );
+  }
+
+  return styleReply(s, "わかりました。お願いします", [], messages);
+}
+
+function behaviorTopicLabel(text: string): string {
+  const t = compact(text);
+  if (/野菜|サラダ/.test(t)) return "野菜";
+  if (/朝食|朝ごはん|朝ご飯/.test(t)) return "朝食";
+  if (/昼食|昼ごはん|昼ご飯|ランチ/.test(t)) return "昼食";
+  if (/夕食|夕ごはん|夕ご飯|夕飯/.test(t)) return "夕食";
+  if (/間食|お菓子|おやつ/.test(t)) return "間食";
+  if (/歩く|ウォーキング/.test(t)) return "歩くこと";
+  if (/運動|身体活動/.test(t)) return "運動";
+  if (/飲酒|お酒|アルコール/.test(t)) return "飲酒";
+  if (/喫煙|たばこ|タバコ/.test(t)) return "喫煙";
+  if (/睡眠|寝る|就寝/.test(t)) return "睡眠";
+  return "生活習慣";
+}
+
+function proposedChangePhrase(text: string): string {
+  const t = compact(text);
+  const number = t.match(/(?:週に)?([0-9一二三四五六七八九]+)(日|回|分|時間|杯|本|個)/);
+  if (number) {
+    if (/増や/.test(t)) return `${number[0]}増やす`;
+    if (/減ら/.test(t)) return `${number[0]}減らす`;
+    if (/歩/.test(t)) return `${number[0]}歩く`;
+    if (/運動/.test(t)) return `${number[0]}運動する`;
+  }
+  if (/増や/.test(t)) return "少し増やす";
+  if (/減ら/.test(t)) return "少し減らす";
+  return "";
+}
+
+function isBehaviorChangeProposal(text: string): boolean {
+  const t = compact(text);
+  const hasAction =
+    /(増やす|増やせ|減らす|減らせ|控える|やめる|始める|続ける|歩く|運動する|食べる日)/.test(t);
+  const asksDecision =
+    /(できますか|できると思いますか|できそうですか|どうですか|どうでしょう|やってみませんか|取り組めそう)/.test(t);
+  return hasAction && asksDecision;
+}
+
+function behaviorChangeProposalReply(
+  s: Scenario,
+  st: ConversationState,
+  text: string,
+  messages: Message[]
+): string {
+  const topic = behaviorTopicLabel(text);
+  const change = proposedChangePhrase(text);
+  const proposal = change ? `${topic}を${change}` : `${topic}を少し変える`;
+
+  const feasibility =
+    st.confidence +
+    st.readiness * 0.35 +
+    st.socialSupport * 0.1 -
+    st.structuralBarrier * 0.35 -
+    st.timeConstraint * 0.2 -
+    st.resistance * 0.15;
+
+  if (
+    st.decisionStatus === "tentative_decision" ||
+    st.decisionStatus === "self_selected_goal" ||
+    feasibility >= 38
+  ) {
+    return styleReply(
+      s,
+      `${proposal}くらいなら、やってみてもいいかなと思います`,
+      ["毎日完璧にできるかは分かりませんが、それくらいなら考えられそうです"],
+      messages
+    );
+  }
+
+  if (
+    st.decisionStatus === "considering" ||
+    feasibility >= 12
+  ) {
+    return styleReply(
+      s,
+      `${proposal}ことはできるかもしれませんが、続けられるかはまだ少し自信がありません`,
+      [],
+      messages
+    );
+  }
+
+  return styleReply(
+    s,
+    `${proposal}方がいいのは分かりますが、今の生活で続けるとなると少し難しいです`,
+    [],
+    messages
+  );
+}
+
 function topicReply(
   s: Scenario,
   text: string,
@@ -339,6 +477,15 @@ function topicReply(
   const intent = detectIntent(text);
 
   if (intent === "greeting") return "こんにちは。よろしくお願いします。";
+
+  // Conversational act takes priority over topical lookup.
+  if (isCheckupConversationOpening(text)) {
+    return checkupOpeningReply(s, st, messages);
+  }
+
+  if (isBehaviorChangeProposal(text)) {
+    return behaviorChangeProposalReply(s, st, text, messages);
+  }
 
   if (intent === "work" && p.occupation) {
     return styleReply(s, `${p.occupation}の仕事をしています`, [
