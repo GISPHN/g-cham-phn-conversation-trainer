@@ -72,6 +72,9 @@ export type TurnAnalysis = {
   informationGiving: boolean;
   elicitedReason: boolean;
   goalSetting: boolean;
+  elicitsGoal: boolean;
+  behaviorProposal: boolean;
+  checkupOpening: boolean;
   judgmental: boolean;
 };
 
