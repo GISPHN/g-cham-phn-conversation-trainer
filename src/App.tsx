@@ -289,9 +289,10 @@ export default function App() {
     setGenerating(true);
 
     const detailRequest = detectPersonaDetailRequest(text);
-    const rememberedDetail = detailRequest
-      ? sessionMemory[detailRequest.key]
-      : undefined;
+    const rememberedDetail =
+      detailRequest && !detailRequest.isCorrection
+        ? sessionMemory[detailRequest.key]
+        : undefined;
 
     let groundedSeed =
       rememberedDetail ??
@@ -465,7 +466,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.4</span>
+        <span className="badge">MVP 0.5.5</span>
       </header>
 
       <section className="panel">
