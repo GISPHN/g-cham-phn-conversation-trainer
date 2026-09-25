@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { scenarios } from "./data/scenarios";
-import { loadJmedPersona, withPersona } from "./data/jmed";
-import { ConversationState, Message, Persona, TurnAnalysis } from "./domain/types";
+import {
+  loadJmedPersona,
+  loadJmedPersonaForTraining,
+  withPersona,
+} from "./data/jmed";
+import {
+  ConversationState,
+  Message,
+  Persona,
+  Scenario,
+  TrainingProfile,
+  TrainingSelectionMode,
+  TurnAnalysis,
+} from "./domain/types";
 import { analyzeTurn } from "./engine/analyze";
 import {
   deriveInitialState,
@@ -15,6 +27,14 @@ import {
   shouldBypassAI,
 } from "./engine/reply";
 import { buildFeedback } from "./engine/feedback";
+import {
+  createTrainingScenario,
+  difficultyOptions,
+  initialDecisionOptions,
+  randomTrainingProfile,
+  supportTypeOptions,
+  trainingProfileLabel,
+} from "./engine/training";
 import {
   generateLocalAIReply,
   generatePersonaDetail,
@@ -102,10 +122,22 @@ type PersonaStatus = "idle" | "loading" | "ready" | "fallback";
 
 export default function App() {
   const [id, setId] = useState(scenarios[0].id);
-  const baseScenario = useMemo(
+  const templateScenario = useMemo(
     () => scenarios.find((x) => x.id === id) ?? scenarios[0],
     [id]
   );
+  const [configuredScenario, setConfiguredScenario] = useState<Scenario | null>(null);
+  const baseScenario = configuredScenario ?? templateScenario;
+
+  const [trainingProfile, setTrainingProfile] = useState<TrainingProfile>({
+    difficulty: "標準",
+    supportType: "動機付け支援",
+    initialDecisionStatus: "ambivalent",
+  });
+  const [activeTrainingProfile, setActiveTrainingProfile] =
+    useState<TrainingProfile | null>(null);
+  const [selectionMode, setSelectionMode] =
+    useState<TrainingSelectionMode>("criteria");
 
   const [activePersona, setActivePersona] = useState<Persona>(baseScenario.persona);
   const [personaStatus, setPersonaStatus] = useState<PersonaStatus>("idle");
@@ -245,7 +277,7 @@ export default function App() {
       setActivePersona(persona);
       setPersonaStatus("ready");
       setPersonaMessage(
-        `JMED-Personas実データを使用中（ID: ${persona.sourceId?.slice(0, 8) ?? "unknown"}…）`
+        `JMED-Personas由来の合成ペルソナを使用中（dataset ID: ${persona.sourceId?.slice(0, 8) ?? "unknown"}…）`
       );
       const personalizedState = deriveInitialState(selected.initialState, persona);
       if (synthesisSupported) window.speechSynthesis.cancel();
@@ -282,6 +314,76 @@ export default function App() {
     setStarted(false);
     setFinished(false);
     setSessionMemory({});
+  };
+
+  const selectTrainingTarget = async (
+    mode: TrainingSelectionMode,
+    chooseDifferentPersona = false
+  ) => {
+    const profile =
+      mode === "random" ? randomTrainingProfile() : trainingProfile;
+
+    if (mode === "random") {
+      setTrainingProfile(profile);
+    }
+
+    const selectedScenario = createTrainingScenario(profile);
+    setConfiguredScenario(selectedScenario);
+    setActiveTrainingProfile(profile);
+    setSelectionMode(mode);
+    setPersonaStatus("loading");
+    setPersonaMessage("トレーニング条件に合うJMED-Personas由来の合成ペルソナを選択しています…");
+    setStarted(false);
+    clearThinkingFillers();
+
+    try {
+      const persona = await loadJmedPersonaForTraining(
+        profile,
+        chooseDifferentPersona ? activePersona.sourceId : undefined
+      );
+      setActivePersona(persona);
+      setPersonaStatus("ready");
+      setPersonaMessage(
+        `JMED-Personas由来の合成ペルソナを使用中（dataset ID: ${persona.sourceId?.slice(0, 8) ?? "unknown"}…）`
+      );
+
+      const personalizedState = deriveInitialState(
+        selectedScenario.initialState,
+        persona
+      );
+
+      if (synthesisSupported) window.speechSynthesis.cancel();
+      setMessages([]);
+      setAnalyses([]);
+      setState(personalizedState);
+      setInput("");
+      setStarted(true);
+      setFinished(false);
+      setListening(false);
+      setSpeechStatus("");
+      setGenerating(false);
+      setThinkingFiller("");
+      setSessionMemory({});
+    } catch (error) {
+      console.error(error);
+      setActivePersona(selectedScenario.persona);
+      setPersonaStatus("fallback");
+      setPersonaMessage(
+        "JMED-Personasを取得できなかったため、内蔵デモペルソナで開始します。"
+      );
+      setMessages([]);
+      setAnalyses([]);
+      setState(
+        deriveInitialState(
+          selectedScenario.initialState,
+          selectedScenario.persona
+        )
+      );
+      setInput("");
+      setStarted(true);
+      setFinished(false);
+      setSessionMemory({});
+    }
   };
 
   const enableLocalAI = async () => {
@@ -525,22 +627,118 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.5.7</span>
+        <span className="badge">MVP 0.6.0</span>
       </header>
 
-      <section className="panel">
-        <label>ケース</label>
-        <select value={id} onChange={(e) => chooseScenario(e.target.value)}>
-          {scenarios.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.difficulty}｜{x.title}
-            </option>
-          ))}
-        </select>
-
-        <div className="grid">
+      <section className="panel trainingSelector">
+        <div className="head">
           <div>
-            <h2>{baseScenario.title}</h2>
+            <h2>トレーニング対象者を選ぶ</h2>
+            <p className="small">
+              練習したいケースレベル・支援区分・面接開始時の意思決定状態を指定すると、
+              条件に適したJMED-Personas由来の合成ペルソナを選択します。
+            </p>
+          </div>
+        </div>
+
+        <div className="trainingGrid">
+          <label>
+            <span>ケースレベル</span>
+            <select
+              value={trainingProfile.difficulty}
+              onChange={(e) =>
+                setTrainingProfile((prev) => ({
+                  ...prev,
+                  difficulty: e.target.value as TrainingProfile["difficulty"],
+                }))
+              }
+              disabled={personaStatus === "loading" || generating}
+            >
+              {difficultyOptions.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>支援区分</span>
+            <select
+              value={trainingProfile.supportType}
+              onChange={(e) =>
+                setTrainingProfile((prev) => ({
+                  ...prev,
+                  supportType: e.target.value as TrainingProfile["supportType"],
+                }))
+              }
+              disabled={personaStatus === "loading" || generating}
+            >
+              {supportTypeOptions.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>開始時の意思決定状態</span>
+            <select
+              value={trainingProfile.initialDecisionStatus}
+              onChange={(e) =>
+                setTrainingProfile((prev) => ({
+                  ...prev,
+                  initialDecisionStatus:
+                    e.target.value as TrainingProfile["initialDecisionStatus"],
+                }))
+              }
+              disabled={personaStatus === "loading" || generating}
+            >
+              {initialDecisionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="trainingActions">
+          <button
+            onClick={() => void selectTrainingTarget("criteria")}
+            disabled={personaStatus === "loading" || generating}
+          >
+            この条件で対象者を選んで開始
+          </button>
+          <button
+            className="secondary"
+            onClick={() => void selectTrainingTarget("random")}
+            disabled={personaStatus === "loading" || generating}
+          >
+            🎲 完全ランダムで開始
+          </button>
+          {started && activeTrainingProfile && (
+            <button
+              className="secondary"
+              onClick={() => void selectTrainingTarget("criteria", true)}
+              disabled={personaStatus === "loading" || generating}
+            >
+              同じ条件で別の対象者
+            </button>
+          )}
+        </div>
+
+        {activeTrainingProfile && (
+          <div className="trainingSummary">
+            <span>現在のトレーニング条件</span>
+            <strong>{trainingProfileLabel(activeTrainingProfile)}</strong>
+            <small>
+              選択方法：
+              {selectionMode === "random" ? "完全ランダム" : "条件指定"}
+            </small>
+          </div>
+        )}
+
+        <div className="grid trainingContext">
+          <div>
+            <h3>{baseScenario.title}</h3>
             <p>{baseScenario.supportType}・{baseScenario.difficulty}</p>
             <ul>{baseScenario.publicContext.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
@@ -549,6 +747,11 @@ export default function App() {
             <ul>{baseScenario.learningObjectives.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
         </div>
+
+        <p className="tiny">
+          ケースレベル・支援区分・意思決定状態は本アプリの教育用設定です。
+          JMED-Personas原データにこれらのラベルが付与されているわけではありません。
+        </p>
       </section>
 
       <section className="panel aiPanel">
@@ -616,13 +819,11 @@ export default function App() {
             </div>
           ) : !started ? (
             <div className="empty">
-              <p>対象者を迎える場面から始まります。</p>
+              <p>上の「トレーニング対象者を選ぶ」から条件を指定してください。</p>
               <p className="small">
-                開始時にJMED-Personasの実レコードから40〜74歳の対象者背景を取得します。
+                条件に応じてJMED-Personas由来の40〜74歳の合成ペルソナを選択し、
+                面接開始時の状態を構成します。
               </p>
-              <button onClick={() => void loadPersonaAndStart(baseScenario)}>
-                トレーニング開始
-              </button>
             </div>
           ) : (
             <>
@@ -725,6 +926,17 @@ export default function App() {
           <h2>トレーニング中の状態</h2>
           <p className="small">教育用の内部モデルであり心理尺度ではありません。</p>
 
+          {activeTrainingProfile && (
+            <div className="activeTrainingCard">
+              <span>開始条件</span>
+              <strong>{activeTrainingProfile.difficulty}</strong>
+              <span>{activeTrainingProfile.supportType}</span>
+              <span>
+                {decisionLabels[activeTrainingProfile.initialDecisionStatus]}
+              </span>
+            </div>
+          )}
+
           {numericStateKeys.map((key) => (
             <div className="metric" key={key}>
               <div><span>{names[key]}</span><span>{state[key]}</span></div>
@@ -742,7 +954,7 @@ export default function App() {
           {scenario.persona.prefecture && <p>{scenario.persona.prefecture}／{scenario.persona.education}</p>}
           <p>{scenario.persona.exercise}／{scenario.persona.diet}</p>
           {scenario.persona.source === "JMED-Personas" && (
-            <p className="sourceBadge">JMED-Personas 実レコード</p>
+            <p className="sourceBadge">JMED-Personas由来の合成ペルソナ</p>
           )}
         </aside>
       </section>
