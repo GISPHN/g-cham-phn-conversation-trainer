@@ -33,6 +33,8 @@ export type Persona = {
   checkupHistory?: string;
   source?: "JMED-Personas" | "demo";
   sourceId?: string;
+  talkativeness?: "low" | "medium" | "high";
+  initiative?: "low" | "medium" | "high";
 };
 
 export type Scenario = {
