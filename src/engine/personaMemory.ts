@@ -5,6 +5,7 @@ export type PersonaSessionMemory = Record<string, string>;
 export type PersonaDetailRequest = {
   key: string;
   label: string;
+  isCorrection?: boolean;
 };
 
 const compact = (text: string) => text.replace(/\s+/g, "");
@@ -23,16 +24,22 @@ export function detectPersonaDetailRequest(
 ): PersonaDetailRequest | null {
   const t = compact(text);
   const dimension = detailDimension(t);
+  const isCorrection =
+    /ではなく|じゃなく|違います|違う|そうではなく|聞いています|聞きたいのは/.test(t);
 
   const topics: Array<[RegExp, string, string]> = [
+    // Specific food groups must be checked before broader meal/staple categories.
+    [/うどん|そば|蕎麦|ラーメン|パスタ|スパゲッティ|焼きそば|そうめん|素麺|麺類|麺/, "diet.noodles", "麺類"],
     [/朝食|朝ごはん|朝ご飯/, "diet.breakfast", "朝食"],
-    [/昼食|昼ごはん|昼ご飯|ランチ/, "diet.lunch", "昼食"],
-    [/夕食|夕ごはん|夕ご飯|夕飯|晩ごはん/, "diet.dinner", "夕食"],
+    [/昼食|昼ごはん|昼ご飯|お昼ごはん|お昼ご飯|ランチ/, "diet.lunch", "昼食"],
+    [/夕食|夕ごはん|夕ご飯|夕飯|晩ごはん|晩ご飯/, "diet.dinner", "夕食"],
     [/野菜|サラダ/, "diet.vegetables", "野菜"],
     [/果物|フルーツ/, "diet.fruit", "果物"],
     [/肉|肉料理/, "diet.meat", "肉料理"],
     [/魚|魚料理/, "diet.fish", "魚料理"],
-    [/主食|ご飯|米|パン|麺/, "diet.staple", "主食"],
+    [/パン|食パン|トースト/, "diet.bread", "パン"],
+    [/ご飯|米飯|白米|玄米|米/, "diet.rice", "ご飯"],
+    [/主食/, "diet.staple", "主食"],
     [/間食|お菓子|菓子|おやつ/, "diet.snack", "間食"],
     [/外食|惣菜|弁当/, "diet.eatingout", "外食・惣菜"],
     [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
@@ -45,15 +52,16 @@ export function detectPersonaDetailRequest(
   if (!topic) return null;
 
   const specificQuestion =
-    /どんな|どのような|何を|具体的|種類|詳しく|詳しい|料理名|メニュー|献立|中身|内容|例えば|たとえば|何回|頻度|週に|毎日|何日|どれくらい|どのくらい|量|何皿|何個|何杯|何時|時間帯|いつ/.test(
+    /どんな|どのような|何を|具体的|種類|詳しく|詳しい|料理名|メニュー|献立|中身|内容|例えば|たとえば|何回|頻度|週に|1週間|一週間|毎日|何日|どれくらい|どのくらい|量|何皿|何個|何杯|何時|時間帯|いつ/.test(
       t
     );
 
-  if (!specificQuestion) return null;
+  if (!specificQuestion && !isCorrection) return null;
 
   return {
     key: `${topic[1]}.${dimension}`,
     label: topic[2],
+    isCorrection,
   };
 }
 
@@ -165,6 +173,22 @@ function dietFallback(
     return "魚は焼き魚や煮魚を食べることがありますが、肉料理より回数は少ないです。";
   }
 
+  if (key.startsWith("diet.noodles.items")) {
+    return pickStable(seed, [
+      "麺類なら、うどんやそばを食べることが多いです。時間がない時はラーメンや焼きそばで済ませることもあります。",
+      "麺類はうどん、そば、ラーメンあたりが多いです。昼に手早く済ませたい時に選ぶことがあります。",
+      "昼に麺類を食べる時は、うどんやそば、時々ラーメンを選びます。",
+    ]);
+  }
+
+  if (key.startsWith("diet.bread.items")) {
+    return "パンなら食パンやロールパンを食べることが多いです。朝に簡単に済ませたい時に選びます。";
+  }
+
+  if (key.startsWith("diet.rice.items")) {
+    return "ご飯は白いご飯を食べることが多く、丼物や弁当のご飯として食べることもあります。";
+  }
+
   if (key.startsWith("diet.staple.items")) {
     if (/麺/.test(diet) && /米|ご飯|米飯/.test(diet)) {
       return "主食はご飯の日と麺類の日があります。ご飯の方がやや多いと思います。";
@@ -182,13 +206,19 @@ function dietFallback(
   }
 
   if (key.endsWith(".frequency")) {
+    if (key.startsWith("diet.vegetables")) {
+      return pickStable(seed, [
+        "野菜をほとんど食べない日は、週に2日くらいあります。",
+        "野菜が十分に取れない日は、週に3日くらいあると思います。",
+      ]);
+    }
     if (/多い|よく|中心/.test(diet)) {
-      return `${request.label}は週の半分以上はそのような食べ方になることが多いです。`;
+      return `${request.label}は週に4〜5日くらいそうなることがあります。`;
     }
     if (/時々|ことがある|日がある/.test(diet)) {
-      return `${request.label}は週に何度かそうなる感じです。`;
+      return `${request.label}は週に2〜3回くらいです。`;
     }
-    return `${request.label}は毎日ではなく、日によって変わります。`;
+    return `${request.label}は毎日ではなく、週に何度かです。`;
   }
 
   if (key.endsWith(".amount")) {
