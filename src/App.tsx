@@ -3,7 +3,7 @@ import { scenarios } from "./data/scenarios";
 import { loadJmedPersona, withPersona } from "./data/jmed";
 import { ConversationState, Message, Persona, TurnAnalysis } from "./domain/types";
 import { analyzeTurn } from "./engine/analyze";
-import { updateState } from "./engine/state";
+import { deriveInitialState, updateState } from "./engine/state";
 import {
   buildGroundedReplySeed,
   generateRuleBasedReply,
@@ -17,13 +17,42 @@ import {
   isWebGPUSupported,
 } from "./ai/adapter";
 
-const names: Record<keyof ConversationState, string> = {
+const numericStateKeys = [
+  "trust",
+  "readiness",
+  "resistance",
+  "selfEfficacy",
+  "disclosure",
+  "concern",
+  "importance",
+  "confidence",
+  "structuralBarrier",
+  "socialSupport",
+  "timeConstraint",
+  "financialConstraint",
+] as const;
+
+const names: Record<(typeof numericStateKeys)[number], string> = {
   trust: "信頼",
   readiness: "行動準備性",
   resistance: "抵抗",
   selfEfficacy: "自己効力感",
   disclosure: "情報開示",
   concern: "健康への関心",
+  importance: "重要度",
+  confidence: "実行への自信",
+  structuralBarrier: "構造的障壁",
+  socialSupport: "社会的支援",
+  timeConstraint: "時間的制約",
+  financialConstraint: "経済的制約",
+};
+
+const decisionLabels: Record<ConversationState["decisionStatus"], string> = {
+  not_considering: "まだ考えていない",
+  ambivalent: "迷いがある",
+  considering: "検討している",
+  tentative_decision: "やってみようかと考えている",
+  self_selected_goal: "本人が目標を選択した",
 };
 
 type SpeechRecognitionEventLike = {
@@ -164,7 +193,17 @@ export default function App() {
       setPersonaMessage(
         `JMED-Personas実データを使用中（ID: ${persona.sourceId?.slice(0, 8) ?? "unknown"}…）`
       );
-      resetConversation(selected);
+      const personalizedState = deriveInitialState(selected.initialState, persona);
+      if (synthesisSupported) window.speechSynthesis.cancel();
+      setMessages([]);
+      setAnalyses([]);
+      setState(personalizedState);
+      setInput("");
+      setStarted(true);
+      setFinished(false);
+      setListening(false);
+      setSpeechStatus("");
+      setGenerating(false);
     } catch (error) {
       console.error(error);
       setActivePersona(selected.persona);
@@ -344,7 +383,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.4.3</span>
+        <span className="badge">MVP 0.5.0</span>
       </header>
 
       <section className="panel">
@@ -544,12 +583,17 @@ export default function App() {
           <h2>トレーニング中の状態</h2>
           <p className="small">教育用の内部モデルであり心理尺度ではありません。</p>
 
-          {(Object.keys(state) as (keyof ConversationState)[]).map((key) => (
+          {numericStateKeys.map((key) => (
             <div className="metric" key={key}>
               <div><span>{names[key]}</span><span>{state[key]}</span></div>
               <progress max="100" value={state[key]} />
             </div>
           ))}
+
+          <div className="decisionStatus">
+            <span>意思決定状態</span>
+            <strong>{decisionLabels[state.decisionStatus]}</strong>
+          </div>
 
           <h3>対象者背景</h3>
           <p>{scenario.persona.age}歳・{scenario.persona.sex}／{scenario.persona.occupation}</p>
