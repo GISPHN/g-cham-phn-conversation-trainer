@@ -1,4 +1,4 @@
-import { Persona, Scenario } from "../domain/types";
+import { Persona, Scenario, TrainingProfile } from "../domain/types";
 
 type JmedRow = Record<string, unknown>;
 
@@ -46,6 +46,89 @@ function scoreRow(row: JmedRow, scenarioId: string): number {
   }
 
   return score;
+}
+
+function behaviorRiskCount(row: JmedRow): number {
+  let count = 0;
+  const exercise = str(row, "運動習慣");
+  const diet = str(row, "普段の食生活");
+  const alcohol = str(row, "飲酒歴");
+  const smoking = str(row, "喫煙歴");
+  const sleep = str(row, "睡眠");
+
+  if (/少ない|なし|不足|ほとんど|運動習慣なし/.test(exercise)) count += 1;
+  if (/外食|惣菜|調理済み|野菜.*少|不規則|偏/.test(diet)) count += 1;
+  if (/毎日|ほぼ毎日|多い|過量/.test(alcohol)) count += 1;
+  if (/現在.*喫煙|喫煙中|毎日.*吸/.test(smoking)) count += 1;
+  if (/短い|不足|5時間|不規則/.test(sleep)) count += 1;
+
+  return count;
+}
+
+function personaComplexity(row: JmedRow): number {
+  let score = 0;
+  const economic = str(row, "経済的制約");
+  const household = str(row, "同居／独居");
+  const family = str(row, "家族との関係性・キーパーソン");
+  const social = str(row, "社会参加・孤立");
+  const literacy = str(row, "医療・健康リテラシー");
+  const occupation = str(row, "職業");
+
+  if (economic && !/特になし|なし|制約なし/.test(economic)) score += 2;
+  if (/独居|孤立|交流.*少|支援.*なし|疎遠/.test(household + social + family)) score += 2;
+  if (/夜勤|交代|不規則|長時間|残業|多忙|忙/.test(occupation + economic)) score += 1;
+  if (/低/.test(literacy)) score += 1;
+  score += Math.min(3, behaviorRiskCount(row));
+
+  return score;
+}
+
+function decisionCompatibility(
+  row: JmedRow,
+  status: TrainingProfile["initialDecisionStatus"]
+): number {
+  const text = [
+    str(row, "患者の語り/代表発話"),
+    str(row, "健診歴"),
+    str(row, "普段の食生活"),
+    str(row, "運動習慣"),
+  ].join(" ");
+
+  if (status === "not_considering") {
+    return /気にしていない|問題ない|必要ない|困っていない|変えるつもり.*ない/.test(text)
+      ? 5
+      : 0;
+  }
+  if (status === "ambivalent") {
+    return /分かって.*けど|わかって.*けど|気になる.*けど|でも|続か|難しい|迷/.test(text)
+      ? 5
+      : 1;
+  }
+  if (status === "considering") {
+    return /気になる|改善|変えたい|考えて|見直/.test(text) ? 5 : 1;
+  }
+  return /やってみ|できそう|少しなら|始めて|取り組/.test(text) ? 5 : 1;
+}
+
+function scoreTrainingRow(row: JmedRow, profile: TrainingProfile): number {
+  const age = num(row, "年齢");
+  if (!Number.isFinite(age) || age < 40 || age > 74) return -999;
+
+  const complexity = personaComplexity(row);
+  const targetComplexity =
+    profile.difficulty === "初級" ? 2 : profile.difficulty === "標準" ? 5 : 8;
+  const difficultyFit = Math.max(0, 10 - Math.abs(complexity - targetComplexity) * 2);
+
+  const risks = behaviorRiskCount(row);
+  let supportFit = 0;
+  if (profile.supportType === "積極的支援") {
+    supportFit += risks >= 2 ? 4 : 1;
+    if (/連続|毎年|複数回|継続/.test(str(row, "健診歴"))) supportFit += 2;
+  } else {
+    supportFit += risks <= 2 ? 4 : 2;
+  }
+
+  return 10 + difficultyFit + supportFit + decisionCompatibility(row, profile.initialDecisionStatus);
 }
 
 function normalizeLiteracy(value: string): "低" | "中" | "高" {
@@ -154,4 +237,29 @@ export async function loadJmedPersona(
 
 export function withPersona(scenario: Scenario, persona: Persona): Scenario {
   return { ...scenario, persona };
+}
+
+
+export async function loadJmedPersonaForTraining(
+  profile: TrainingProfile,
+  excludeSourceId?: string
+): Promise<Persona> {
+  const rows = await loadBundledRows();
+
+  const ranked = rows
+    .map((row) => ({ row, score: scoreTrainingRow(row, profile) }))
+    .filter(
+      (item) =>
+        item.score > -999 &&
+        (!excludeSourceId || str(item.row, "患者ID") !== excludeSourceId)
+    )
+    .sort((a, b) => b.score - a.score);
+
+  if (!ranked.length) throw new Error("JMED_NO_TRAINING_PERSONA");
+
+  const poolSize =
+    profile.difficulty === "上級" ? 24 : profile.difficulty === "標準" ? 30 : 36;
+  const top = ranked.slice(0, Math.min(poolSize, ranked.length));
+  const selected = top[Math.floor(Math.random() * top.length)];
+  return toPersona(selected.row);
 }
