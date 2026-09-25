@@ -70,6 +70,19 @@ describe("dialogue regression", () => {
     expect(detail).toMatch(/野菜/);
   });
 
+  it("converts negative vegetable-day wording into eating days", () => {
+    const memory: PersonaSessionMemory = {
+      "diet.vegetables.frequency":
+        "野菜をほとんど食べない日は、週に2日くらいあります。",
+    };
+    const reply = checkProposalConsistency(
+      "野菜を食べる日を1日増やして週3日とすることはできそうですか",
+      memory
+    );
+    expect(reply).not.toBeNull();
+    expect(reply).toMatch(/週に5日|今より減る|週6日/);
+  });
+
   it("detects an inconsistent vegetable target even with full-width digits", () => {
     const memory: PersonaSessionMemory = {
       "diet.vegetables.frequency":
