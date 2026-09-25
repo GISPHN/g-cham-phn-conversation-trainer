@@ -1,5 +1,12 @@
 export type Difficulty = "初級" | "標準" | "上級";
 
+export type DecisionStatus =
+  | "not_considering"
+  | "ambivalent"
+  | "considering"
+  | "tentative_decision"
+  | "self_selected_goal";
+
 export type ConversationState = {
   trust: number;
   readiness: number;
@@ -7,6 +14,13 @@ export type ConversationState = {
   selfEfficacy: number;
   disclosure: number;
   concern: number;
+  importance: number;
+  confidence: number;
+  structuralBarrier: number;
+  socialSupport: number;
+  timeConstraint: number;
+  financialConstraint: number;
+  decisionStatus: DecisionStatus;
 };
 
 export type Persona = {
