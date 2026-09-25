@@ -6,6 +6,7 @@ export type PersonaDetailRequest = {
   key: string;
   label: string;
   isCorrection?: boolean;
+  queryText?: string;
 };
 
 const compact = (text: string) => text.replace(/\s+/g, "");
@@ -62,6 +63,7 @@ export function detectPersonaDetailRequest(
     key: `${topic[1]}.${dimension}`,
     label: topic[2],
     isCorrection,
+    queryText: text,
   };
 }
 
@@ -208,8 +210,8 @@ function dietFallback(
   if (key.endsWith(".frequency")) {
     if (key.startsWith("diet.vegetables")) {
       return pickStable(seed, [
-        "野菜をほとんど食べない日は、週に2日くらいあります。",
-        "野菜が十分に取れない日は、週に3日くらいあると思います。",
+        "野菜は週に5日くらいは食べています。ほとんど食べない日は週に2日くらいあります。",
+        "野菜は週に4日くらいは食べています。十分に取れない日は週に3日くらいあります。",
       ]);
     }
     if (/多い|よく|中心/.test(diet)) {
@@ -265,4 +267,55 @@ export function generatePersonaConsistentFallbackDetail(
 
   const existing = memory[request.key];
   return existing ?? `${request.label}については、普段の生活に合わせてその都度決めています。`;
+}
+
+
+function parseJapaneseDigit(value: string): number | null {
+  if (/^\d+$/.test(value)) return Number(value);
+  const map: Record<string, number> = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7,
+  };
+  return map[value] ?? null;
+}
+
+function extractCurrentVegetableDays(memory: PersonaSessionMemory): number | null {
+  const candidates = Object.entries(memory)
+    .filter(([key]) => key.startsWith("diet.vegetables"))
+    .map(([, value]) => value);
+
+  for (const text of candidates) {
+    const positive = text.match(/野菜.{0,12}週(?:に)?([0-7一二三四五六七])日/);
+    if (positive) {
+      const n = parseJapaneseDigit(positive[1]);
+      if (n !== null) return n;
+    }
+
+    const negative = text.match(/(?:食べない|ほとんど食べない).{0,8}週(?:に)?([0-7一二三四五六七])日/);
+    if (negative) {
+      const n = parseJapaneseDigit(negative[1]);
+      if (n !== null) return Math.max(0, 7 - n);
+    }
+  }
+
+  return null;
+}
+
+export function checkProposalConsistency(
+  text: string,
+  memory: PersonaSessionMemory
+): string | null {
+  const t = text.replace(/\s+/g, "");
+
+  if (/野菜/.test(t) && /週/.test(t)) {
+    const currentDays = extractCurrentVegetableDays(memory);
+    const targetMatch = t.match(/週(?:に)?([0-7一二三四五六七])日/);
+    if (currentDays !== null && targetMatch) {
+      const target = parseJapaneseDigit(targetMatch[1]);
+      if (target !== null && /食べる日/.test(t) && target < currentDays) {
+        return `今のお話だと、野菜を食べる日は週に${currentDays}日くらいあります。週${target}日にするという意味だと、今より減ることになると思うのですが、週${currentDays + 1 > 7 ? 7 : currentDays + 1}日くらいに増やすという意味でしょうか。`;
+      }
+    }
+  }
+
+  return null;
 }
