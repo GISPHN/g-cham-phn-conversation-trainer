@@ -260,7 +260,7 @@ export async function generatePersonaDetail(
 
   if ("choices" in response) {
     const text = response.choices[0]?.message?.content?.trim();
-    if (text && text.length <= 140) {
+    if (text && text.length <= 220) {
       const forbiddenMedical = [
         "HbA1c",
         "LDL",
