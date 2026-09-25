@@ -371,7 +371,7 @@ export default function App() {
     recognition.start();
   };
 
-  const feedback = finished ? buildFeedback(messages, analyses) : null;
+  const feedback = finished ? buildFeedback(messages, analyses, state) : null;
 
   return (
     <main className="app">
