@@ -1,83 +1,98 @@
 import { ConversationState, Scenario, TurnAnalysis } from "../domain/types";
 
-const hasAny = (text: string, words: string[]) => words.some((word) => text.includes(word));
+const hasAny = (text: string, words: string[]) =>
+  words.some((word) => text.includes(word));
 
-function topicReply(s: Scenario, text: string, st: ConversationState): string | null {
-  const t = text.replace(/\s+/g, "");
+const compact = (text: string) => text.replace(/\s+/g, "");
 
-  if (hasAny(t, ["こんにちは", "よろしく", "はじめまして", "お名前", "担当", "保健師"])) {
-    if (s.id === "shi-02") return "こんにちは。よろしくお願いします。去年も受けているので、だいたい流れは分かっています。";
-    if (s.id === "shi-03") return "こんにちは。よろしくお願いします。今日は健診結果のことですよね。";
-    return "こんにちは。よろしくお願いします。健診の結果についてのお話ですよね。";
+const topicGroups = [
+  ["仕事", "勤務", "職業", "働", "忙しい", "残業"],
+  ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子"],
+  ["運動", "歩く", "歩行", "身体活動", "体を動か", "運動習慣"],
+  ["お酒", "飲酒", "アルコール", "ビール", "晩酌"],
+  ["たばこ", "タバコ", "喫煙"],
+  ["家族", "父", "母", "妻", "夫", "子ども", "同居", "一人暮らし"],
+  ["睡眠", "寝", "眠"],
+  ["趣味", "大切", "楽しみ", "続けたい", "価値"],
+  ["健診", "結果", "血圧", "中性脂肪", "腹囲", "体重", "健康"],
+  ["去年", "前回", "以前", "これまで", "指導"],
+];
+
+export function shouldBypassAI(userText: string): boolean {
+  const t = compact(userText);
+
+  if (hasAny(t, ["こんにちは", "よろしく", "はじめまして", "おはよう", "こんばんは"])) {
+    return true;
   }
 
-  if (hasAny(t, ["仕事", "忙しい", "勤務", "残業", "営業", "時間がない"])) {
-    if (s.id === "shi-01") {
-      return "営業なので外に出ていることが多くて、昼も決まった時間に取れないんです。帰るのも遅い日が多いですね。";
+  const matched = topicGroups.filter((group) => hasAny(t, group)).length;
+
+  // 1つの背景事実を直接尋ねる質問はLLMを介さず即答する。
+  if (matched === 1 && t.length <= 45) return true;
+
+  return false;
+}
+
+function topicReply(
+  s: Scenario,
+  text: string,
+  st: ConversationState
+): string | null {
+  const t = compact(text);
+  const p = s.persona;
+
+  if (hasAny(t, ["こんにちは", "よろしく", "はじめまして", "おはよう", "こんばんは"])) {
+    return "こんにちは。よろしくお願いします。";
+  }
+
+  if (hasAny(t, ["仕事", "勤務", "職業", "働", "忙しい", "残業"])) {
+    if (p.occupation) {
+      return `${p.occupation}の仕事をしています。`;
     }
-    if (s.id === "shi-02") {
-      return "管理職なので会議や付き合いが多いですね。忙しい時期は、自分の食事まで気を配る余裕はあまりないです。";
-    }
-    return "仕事は事務なので極端に忙しいわけではないです。ただ、座っている時間は長いですね。";
+  }
+
+  if (hasAny(t, ["食事", "昼食", "夕食", "朝食", "外食", "食べ", "間食", "お菓子"])) {
+    if (p.diet) return p.diet;
   }
 
   if (hasAny(t, ["運動", "歩く", "歩行", "身体活動", "体を動か", "運動習慣"])) {
-    if (s.id === "shi-01") {
-      return "運動として何かやっているわけではないです。でも営業先へ行く時に歩くことはあります。帰宅後に運動するのは正直難しいです。";
-    }
-    if (s.id === "shi-02") {
-      return "週末に少し歩くことはありますけど、毎週ではないです。平日はほとんど運動できていません。";
-    }
-    return "通勤で歩くことはあります。運動不足だと思って、動画を見ながら体操を始めたこともあるんですが、長くは続きませんでした。";
-  }
-
-  if (hasAny(t, ["食事", "昼食", "夕食", "外食", "食べ", "間食", "お菓子"])) {
-    if (s.id === "shi-01") {
-      return "昼は営業先の近くで外食することが多いです。夜も帰りが遅いので、夕食が21時を過ぎることがあります。家族と食べられる日は一緒に食べたいんです。";
-    }
-    if (s.id === "shi-02") {
-      return "会食や外食が多いですね。去年は夕食の量を少し減らした時期があって、その時は体重が2キロくらい落ちました。";
-    }
-    return "健康に良いと聞いたものを試すことは多いです。でも、いろいろ気にし始めると何を優先したらいいか分からなくなります。";
+    if (p.exercise) return `運動は、${p.exercise}という感じです。`;
   }
 
   if (hasAny(t, ["お酒", "飲酒", "アルコール", "ビール", "晩酌"])) {
-    if (s.id === "shi-01") return "夕食の時に飲むことが多くて、週5日くらいです。仕事の後の楽しみでもあるので、完全にやめるのは考えていません。";
-    if (s.id === "shi-02") return "ほぼ毎日飲みます。仕事上の付き合いもありますし、家でも飲むことがあります。";
-    return "飲むのは週に1、2回くらいです。量も多くはないと思います。";
+    if (p.alcohol) return `お酒は${p.alcohol}です。`;
   }
 
-  if (hasAny(t, ["家族", "父", "母", "妻", "夫", "子ども", "糖尿病"])) {
-    if (s.id === "shi-01") {
-      if (st.disclosure >= 32) return "父が糖尿病で通院しているので、自分も少しは気になっています。でも、父ほどではないだろうとも思っています。";
-      return "家族とは普通に過ごしています。健康のことを強く言われることはあまりないですね。";
-    }
-    if (s.id === "shi-02") return "妻からは少し気をつけたらと言われます。ただ、毎日のことなので自分のペースでやりたい気持ちはあります。";
-    return "一人暮らしですが、家族とは定期的に連絡しています。今のところ生活上の困りごとは特にありません。";
+  if (hasAny(t, ["たばこ", "タバコ", "喫煙"])) {
+    if (p.smoking) return `たばこは${p.smoking}です。`;
   }
 
-  if (hasAny(t, ["去年", "前回", "以前", "これまで", "前にも", "指導"])) {
+  if (hasAny(t, ["睡眠", "寝", "眠"])) {
+    if (p.sleep) return `睡眠は${p.sleep}です。`;
+  }
+
+  if (hasAny(t, ["家族", "父", "母", "妻", "夫", "子ども", "同居", "一人暮らし"])) {
+    const facts = [p.household, p.familyRelationship].filter(Boolean);
+    if (st.disclosure >= 45 && p.familyHistory) facts.push(p.familyHistory);
+    if (facts.length) return facts.join("。") + "。";
+  }
+
+  if (hasAny(t, ["趣味", "大切", "楽しみ", "続けたい", "価値"])) {
+    if (p.values) return p.values;
+  }
+
+  if (hasAny(t, ["去年", "前回", "以前", "これまで", "指導"])) {
     if (s.id === "shi-02") {
-      return "去年も食事を減らす話をしました。一時は体重が落ちたんですけど、その後忙しくなって戻りました。毎年同じ説明をされるのは少し疲れます。";
+      return "去年も保健指導を受けました。少し取り組んだ時期はありましたが、続かなかったこともあります。毎年同じ説明になると少し疲れます。";
     }
-    if (s.id === "shi-01") return "以前も健診で少し気をつけるようには言われました。でも、その時は特に症状もなかったので、そのままになっています。";
-    return "去年も少し食事を気にしました。情報はいろいろ調べるんですが、続けるものを一つに決めるのが難しかったです。";
+    return "以前も健診の結果について説明を受けたことはあります。";
   }
 
-  if (hasAny(t, ["気になる", "心配", "どう思", "健康", "結果", "血圧", "中性脂肪", "腹囲", "体重"])) {
-    if (s.id === "shi-01") {
-      return "数値が上がっているのは少し気になります。ただ、今は特に体調が悪いわけではないので、どこまで変えないといけないのかなとは思っています。";
+  if (hasAny(t, ["健診", "結果", "血圧", "中性脂肪", "腹囲", "体重", "健康"])) {
+    if (p.checkupHistory) {
+      return `健診は${p.checkupHistory}。今回の結果は少し気になっています。`;
     }
-    if (s.id === "shi-02") {
-      return "良くはないんだろうなとは思っています。でも毎年言われているので、また同じ話かという気持ちもあります。";
-    }
-    return "気にはしています。将来も元気に旅行したいので、できることはしたいです。ただ情報が多すぎて迷います。";
-  }
-
-  if (hasAny(t, ["大切", "楽しみ", "続けたい", "したいこと", "目標", "できそう", "ならできる"])) {
-    if (s.id === "shi-01") return "仕事を続けながら家族との時間も大事にしたいです。帰宅後の運動より、仕事中にできることなら考えやすいです。";
-    if (s.id === "shi-02") return "無理なく続けられることなら考えてもいいです。会食がない日の夕食を少し減らすくらいなら、前にもできました。";
-    return "旅行はこれからも続けたいです。そのために何か一つ選ぶなら、間食を減らすことからなら始められそうです。";
+    return "今回の健診結果は少し気になっています。";
   }
 
   return null;
@@ -93,48 +108,46 @@ export function generateRuleBasedReply(
   const topical = topicReply(s, userText, st);
   if (topical) return topical;
 
-  if (a.judgmental) return "そういう言い方をされると、正直あまり話したくなくなります。";
+  if (a.judgmental) {
+    return "そういう言い方をされると、少し話しにくく感じます。";
+  }
 
   if (st.resistance >= 72) {
     if (a.reflection || a.empathy) {
-      return s.id === "shi-02"
-        ? "そうなんです。何もしていないわけではないんです。去年も少しやったので、そこは分かってほしいです。"
-        : "そうなんです。必要なのは分かっているんですけど、今の生活で全部変えるのは難しいです。";
+      return "そうなんです。自分なりにやったこともあるので、そのあたりも聞いてもらえると話しやすいです。";
     }
-    if (a.directive) return "それが簡単にできるなら、もうやっていると思います。";
+    if (a.directive) {
+      return "すぐにできるかと言われると、正直ちょっと難しいです。";
+    }
   }
 
   if (a.elicitedReason && st.disclosure >= 35) {
-    if (s.id === "shi-01") return "父が糖尿病なので、自分もこのままでいいのかなとは少し思っています。";
-    if (s.id === "shi-02") return "去年少し体重が落ちた時は、やれば変わるんだなとは思いました。";
-    return "旅行を元気に続けたいというのはあります。";
+    if (s.persona.values) {
+      return `${s.persona.values}。そのためにも健康のことは少し気になっています。`;
+    }
   }
 
   if (a.autonomySupport && st.readiness >= 45) {
-    if (s.id === "shi-01") return "帰宅後の運動は難しいですが、営業先への移動で歩く距離を少し増やすならできるかもしれません。";
-    if (s.id === "shi-02") return "会食がない日の夕食を少し減らすなら、前にもできたのでまたやれるかもしれません。";
-    return "一つに絞るなら、夕食後のお菓子を毎日ではなく週3日にするくらいならできそうです。";
+    const exercise = s.persona.exercise || "運動";
+    const diet = s.persona.diet || "食事";
+    return `今の生活を全部変えるのは難しいですが、${exercise}や${diet}の中で、無理なくできることなら考えてみたいです。`;
   }
 
   if (a.openQuestion) {
-    if (s.id === "shi-01") return "一番難しいのは時間ですね。仕事が不規則なので、決まった時間に何かするのは続きにくいです。";
-    if (s.id === "shi-02") return "できなかったことばかり聞かれると嫌になりますね。できたことも少しはあったんです。";
-    return "健康には関心があります。でも、いろいろ試してしまって一つに絞れないんです。";
+    if (s.persona.economicConstraint && s.persona.economicConstraint !== "特になし") {
+      return `一番気になるのは、${s.persona.economicConstraint}というところです。`;
+    }
+    return "何か一つなら考えられそうですが、生活を大きく変えるのは難しいと思っています。";
   }
 
   if (a.informationGiving) {
-    return "結果については分かりました。その上で、自分の生活なら何から考えるのが現実的でしょうか。";
+    return "結果については分かりました。自分の生活の中で何から考えるのがよいかは、少し相談したいです。";
   }
 
-  if (turn === 1) {
-    return s.id === "shi-02"
-      ? "はい、よろしくお願いします。去年も受けているので、今日はどんなお話でしょうか。"
-      : "はい、よろしくお願いします。今日は健診結果のお話ですよね。";
-  }
+  if (turn === 1) return "はい、よろしくお願いします。";
 
   return "そうですね。もう少し具体的に聞いてもらえればお話しできると思います。";
 }
-
 
 export function buildGroundedReplySeed(
   s: Scenario,
