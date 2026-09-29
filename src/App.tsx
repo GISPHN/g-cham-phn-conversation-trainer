@@ -47,6 +47,7 @@ import {
   detectPersonaDetailRequest,
   generatePersonaConsistentFallbackDetail,
   personaEvidenceForDetail,
+  PersonaDetailRequest,
   PersonaSessionMemory,
 } from "./engine/personaMemory";
 
@@ -163,6 +164,8 @@ export default function App() {
   const [generating, setGenerating] = useState(false);
   const [thinkingFiller, setThinkingFiller] = useState("");
   const [sessionMemory, setSessionMemory] = useState<PersonaSessionMemory>({});
+  const [lastDetailRequest, setLastDetailRequest] =
+    useState<PersonaDetailRequest | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
@@ -265,6 +268,7 @@ export default function App() {
     setGenerating(false);
     setThinkingFiller("");
     setSessionMemory({});
+    setLastDetailRequest(null);
   };
 
   const loadPersonaAndStart = async (selected = baseScenario) => {
@@ -291,6 +295,7 @@ export default function App() {
       setSpeechStatus("");
       setGenerating(false);
       setSessionMemory({});
+    setLastDetailRequest(null);
     } catch (error) {
       console.error(error);
       setActivePersona(selected.persona);
@@ -314,6 +319,7 @@ export default function App() {
     setStarted(false);
     setFinished(false);
     setSessionMemory({});
+    setLastDetailRequest(null);
   };
 
   const selectTrainingTarget = async (
@@ -364,6 +370,7 @@ export default function App() {
       setGenerating(false);
       setThinkingFiller("");
       setSessionMemory({});
+    setLastDetailRequest(null);
     } catch (error) {
       console.error(error);
       setActivePersona(selectedScenario.persona);
@@ -383,6 +390,7 @@ export default function App() {
       setStarted(true);
       setFinished(false);
       setSessionMemory({});
+    setLastDetailRequest(null);
     }
   };
 
@@ -437,7 +445,10 @@ export default function App() {
     setGenerating(true);
     startThinkingFillers(text, nextState);
 
-    const rawDetailRequest = detectPersonaDetailRequest(text);
+    const rawDetailRequest = detectPersonaDetailRequest(
+      text,
+      lastDetailRequest
+    );
     const detailRequest =
       analysis.elicitsGoal || analysis.behaviorProposal || analysis.checkupOpening
         ? null
@@ -446,6 +457,10 @@ export default function App() {
       detailRequest && !detailRequest.isCorrection
         ? sessionMemory[detailRequest.key]
         : undefined;
+
+    if (detailRequest) {
+      setLastDetailRequest(detailRequest);
+    }
 
     let groundedSeed =
       consistencyReply ??
@@ -627,7 +642,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.6.0</span>
+        <span className="badge">MVP 0.6.1</span>
       </header>
 
       <section className="panel trainingSelector">
