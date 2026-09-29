@@ -135,7 +135,7 @@ export function detectPersonaDetailRequest(
 
   const nonDietTopics: Array<[RegExp, string, string]> = [
     [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
-    [/睡眠|寝る|眠る|就寝|起床/, "sleep.pattern", "睡眠"],
+    [/睡眠|寝|眠|就寝|起床/, "sleep.pattern", "睡眠"],
     [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
     [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
   ];
@@ -517,7 +517,9 @@ function parseJapaneseDigit(value: string): number | null {
 
 function extractCurrentVegetableDays(memory: PersonaSessionMemory): number | null {
   const candidates = Object.entries(memory)
-    .filter(([key]) => key.startsWith("diet.vegetables"))
+    .filter(([key]) =>
+      key.startsWith("diet.vegetables") || key.includes(".vegetables.")
+    )
     .map(([, value]) => value);
 
   for (const text of candidates) {
