@@ -51,7 +51,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   const t = compact(text);
   if (/どれくらい|どのくらい|量|何皿|何個|何杯|何グラム|何g|どの程度/.test(t)) return "amount";
   if (/何回|頻度|週に|1週間|一週間|毎日|何日|何度/.test(t)) return "frequency";
-  if (/何時|時間帯|いつ食べ|何時頃|何時ぐらい/.test(t)) return "time";
+  if (/何時|時間帯|いつ食べ|何時頃|何時ごろ|何時ぐらい|何時くらい/.test(t)) return "time";
   if (/どんな|どのような|何を|種類|具体的|詳しく|詳しい|料理名|メニュー|献立|中身|内容/.test(t)) return "items";
   if (/(食べていますか|食べますか|摂っていますか|取っていますか|ありますか|していますか)[？?]?$/.test(t)) return "presence";
   return "detail";
