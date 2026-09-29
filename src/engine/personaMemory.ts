@@ -1,4 +1,6 @@
-import { Persona, Scenario } from "../domain/types";\n\nexport type PersonaSessionMemory = Record<string, string>;
+import { Persona, Scenario } from "../domain/types";
+
+export type PersonaSessionMemory = Record<string, string>;
 
 export type PersonaDetailDimension =
   | "presence"
