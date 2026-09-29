@@ -250,6 +250,21 @@ describe("dialogue regression", () => {
     expect(amountReply).not.toBe(presenceReply);
   });
 
+  it("preserves detailed exercise, sleep, alcohol, and work detection", () => {
+    expect(
+      detectPersonaDetailRequest("普段はどのような運動をしていますか")?.key
+    ).toBe("exercise.activity.items");
+    expect(
+      detectPersonaDetailRequest("普段は何時ごろ寝ていますか")?.key
+    ).toBe("sleep.pattern.time");
+    expect(
+      detectPersonaDetailRequest("お酒は週に何回くらい飲みますか")?.key
+    ).toBe("alcohol.pattern.frequency");
+    expect(
+      detectPersonaDetailRequest("仕事は具体的にどのような勤務ですか")?.key
+    ).toBe("work.pattern.items");
+  });
+
   it("normalizes record-like sentence endings", () => {
     expect(
       normalizeClientSpeech("朝食は家庭で食べることが多い")
