@@ -133,33 +133,15 @@ export function detectPersonaDetailRequest(
   const focus = isCorrection ? correctionFocus(text) : original;
   const dimension = detailDimension(focus);
 
-  let meal = detectMeal(focus);
-  let food = detectFood(focus);
+  const nonDietTopics: Array<[RegExp, string, string]> = [
+    [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
+    [/睡眠|寝る|眠る|就寝|起床/, "sleep.pattern", "睡眠"],
+    [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
+    [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
+  ];
 
-  const followupCue =
-    /^(その|それ|では|じゃあ|ちなみに|どれくらい|どのくらい|量は|何日|何回)/.test(focus) ||
-    dimension !== "detail";
-
-  if (previous && followupCue && !isCorrection) {
-    if (!meal && previous.meal) meal = previous.meal;
-    if (!food && previous.food) food = previous.food;
-  }
-
-  const hasDietContext =
-    Boolean(meal || food) ||
-    /食事|食べ|摂|取/.test(focus) ||
-    Boolean(previous && followupCue && (previous.meal || previous.food));
-
-  if (!hasDietContext) {
-    const nonDietTopics: Array<[RegExp, string, string]> = [
-      [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
-      [/睡眠|寝る|眠る|就寝|起床/, "sleep.pattern", "睡眠"],
-      [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
-      [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
-    ];
-    const topic = nonDietTopics.find(([regex]) => regex.test(focus));
-    if (!topic) return null;
-
+  const nonDietTopic = nonDietTopics.find(([regex]) => regex.test(focus));
+  if (nonDietTopic) {
     const explicitDetail =
       dimension !== "detail" ||
       isCorrection ||
@@ -167,13 +149,34 @@ export function detectPersonaDetailRequest(
     if (!explicitDetail) return null;
 
     return {
-      key: `${topic[1]}.${dimension}`,
-      label: topic[2],
+      key: `${nonDietTopic[1]}.${dimension}`,
+      label: nonDietTopic[2],
       dimension,
       isCorrection,
       queryText: text,
     };
   }
+
+  let meal = detectMeal(focus);
+  let food = detectFood(focus);
+
+  const explicitDietCue =
+    Boolean(meal || food) || /食事|食べ|摂|取/.test(focus);
+  const anaphoricFollowup =
+    /^(その|それ|では|じゃあ|ちなみに|どれくらい|どのくらい|量は|何日|何回|何時)/.test(
+      focus
+    );
+
+  if (previous && anaphoricFollowup && !isCorrection) {
+    if (!meal && previous.meal) meal = previous.meal;
+    if (!food && previous.food) food = previous.food;
+  }
+
+  const hasDietContext =
+    explicitDietCue ||
+    Boolean(previous && anaphoricFollowup && (meal || food));
+
+  if (!hasDietContext) return null;
 
   const explicitDetail =
     dimension !== "detail" ||
