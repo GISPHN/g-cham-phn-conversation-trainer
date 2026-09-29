@@ -199,6 +199,47 @@ export function formatSessionMemory(memory: PersonaSessionMemory): string {
 }
 
 
+export function isPersonaDetailAnswerValid(
+  request: PersonaDetailRequest,
+  answer: string
+): boolean {
+  const text = compact(answer);
+  if (!text) return false;
+
+  if (request.dimension === "amount") {
+    const hasAmount =
+      /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|g|グラム|割|品|人分)|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
+        text
+      );
+    return hasAmount;
+  }
+
+  if (request.dimension === "frequency") {
+    return /週|毎日|日くらい|回くらい|何度か|ほぼ毎日|時々/.test(text);
+  }
+
+  if (request.dimension === "time") {
+    return /[0-9０-９一二三四五六七八九十]+時|朝|昼|夕方|夜|帰宅後|起床後/.test(text);
+  }
+
+  if (request.dimension === "items") {
+    if (request.food === "vegetables") {
+      return /キャベツ|レタス|トマト|青菜|根菜|サラダ|煮物|おひたし|味噌汁|野菜/.test(text);
+    }
+    if (request.food === "noodles") {
+      return /うどん|そば|蕎麦|ラーメン|パスタ|焼きそば|そうめん|麺/.test(text);
+    }
+    return text.length >= 8;
+  }
+
+  if (request.dimension === "presence") {
+    return /はい|いいえ|食べて|食べます|食べません|摂って|取って|あります|ありません/.test(text);
+  }
+
+  return text.length >= 4;
+}
+
+
 function stableIndex(seed: string, size: number): number {
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i += 1) {
@@ -214,12 +255,71 @@ function pickStable(seed: string, values: string[]): string {
 
 function dietFallback(
   scenario: Scenario,
-  request: PersonaDetailRequest
+  request: PersonaDetailRequest,
+  memory: PersonaSessionMemory
 ): string {
   const p = scenario.persona;
   const diet = p.diet || "";
   const key = request.key;
   const seed = `${p.id}:${key}`;
+
+  const relatedMemory = Object.entries(memory)
+    .filter(([memoryKey]) => {
+      if (request.meal && !memoryKey.includes(`.${request.meal}.`)) return false;
+      if (request.food && !memoryKey.includes(`.${request.food}.`)) return false;
+      return true;
+    })
+    .map(([, value]) => value)
+    .join(" ");
+
+  if (request.meal && request.food && request.dimension === "presence") {
+    if (
+      request.food === "vegetables" &&
+      /野菜|サラダ|副菜|青菜|根菜|トマト|キャベツ/.test(relatedMemory)
+    ) {
+      return `はい、${mealLabels[request.meal]}では野菜も食べています。`;
+    }
+
+    if (request.food === "vegetables") {
+      return pickStable(seed, [
+        `はい、${mealLabels[request.meal]}では野菜のおかずを一品食べることがあります。`,
+        `はい、${mealLabels[request.meal]}ではサラダや副菜として野菜を食べています。`,
+      ]);
+    }
+
+    return `はい、${mealLabels[request.meal]}では${foodLabels[request.food]}を食べることがあります。`;
+  }
+
+  if (request.food === "vegetables" && request.dimension === "amount") {
+    const mealPrefix = request.meal ? `${mealLabels[request.meal]}では、` : "";
+    return pickStable(seed, [
+      `${mealPrefix}野菜は小鉢1皿くらいです。サラダなら片手に軽くのるくらいの量だと思います。`,
+      `${mealPrefix}野菜のおかずは小鉢1皿程度で、たくさん食べるというほどではありません。`,
+      `${mealPrefix}野菜は副菜を1品食べるくらいです。量としては小鉢1皿くらいだと思います。`,
+    ]);
+  }
+
+  if (request.food === "vegetables" && request.dimension === "items") {
+    const mealPrefix = request.meal ? `${mealLabels[request.meal]}では、` : "";
+    return pickStable(seed, [
+      `${mealPrefix}キャベツやレタス、トマトなどをサラダで食べることがあります。あとは味噌汁に野菜が入っていることもあります。`,
+      `${mealPrefix}青菜のおひたしや煮物、サラダなどを食べることがあります。`,
+    ]);
+  }
+
+  if (request.meal && request.food === "noodles" && request.dimension === "items") {
+    return pickStable(seed, [
+      `${mealLabels[request.meal]}で麺類を食べる時は、うどんやそばが多いです。時々ラーメンを選ぶこともあります。`,
+      `${mealLabels[request.meal]}の麺類は、うどん、そば、ラーメンあたりを選ぶことが多いです。`,
+    ]);
+  }
+
+  if (request.meal && request.food && request.dimension === "frequency") {
+    return pickStable(seed, [
+      `${mealLabels[request.meal]}で${foodLabels[request.food]}を食べるのは、週に3〜4日くらいです。`,
+      `${mealLabels[request.meal]}では、${foodLabels[request.food]}を週に4日くらい食べています。`,
+    ]);
+  }
 
   if (key.startsWith("diet.breakfast.items")) {
     if (/パン|トースト/.test(diet)) {
@@ -349,7 +449,7 @@ export function generatePersonaConsistentFallbackDetail(
   memory: PersonaSessionMemory
 ): string {
   if (request.key.startsWith("diet.")) {
-    return dietFallback(scenario, request);
+    return dietFallback(scenario, request, memory);
   }
 
   const p = scenario.persona;
