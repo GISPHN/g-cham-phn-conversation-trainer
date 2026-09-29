@@ -84,6 +84,19 @@ describe("dialogue regression", () => {
     expect(reply).toMatch(/週に5日|今より減る|週6日/);
   });
 
+  it("checks targets against nested dinner-vegetable frequency memory", () => {
+    const memory: PersonaSessionMemory = {
+      "diet.dinner.vegetables.frequency":
+        "夕食では野菜を週に5日くらい食べています。",
+    };
+    const reply = checkProposalConsistency(
+      "野菜を食べる日を1日増やして週3日とすることはできそうですか",
+      memory
+    );
+    expect(reply).not.toBeNull();
+    expect(reply).toMatch(/今より減る|週6日/);
+  });
+
   it("detects an inconsistent vegetable target even with full-width digits", () => {
     const memory: PersonaSessionMemory = {
       "diet.vegetables.frequency":
