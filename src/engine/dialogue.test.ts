@@ -9,6 +9,7 @@ import {
   checkProposalConsistency,
   detectPersonaDetailRequest,
   generatePersonaConsistentFallbackDetail,
+  isPersonaDetailAnswerValid,
   type PersonaSessionMemory,
 } from "./personaMemory";
 import {
@@ -152,6 +153,101 @@ describe("dialogue regression", () => {
     );
     expect(reply).toMatch(/食事|野菜|取り組|変え|試して/);
     expect(reply).not.toMatch(/^理美容師の仕事をしています/);
+  });
+
+  it("keeps dinner and vegetables as a nested dietary context", () => {
+    const dinner = detectPersonaDetailRequest(
+      "夕食は特にどのようなものを食べられていますか"
+    );
+    expect(dinner?.key).toBe("diet.dinner.items");
+
+    const vegetablePresence = detectPersonaDetailRequest(
+      "では夕食の時に野菜は食べていますか",
+      dinner
+    );
+    expect(vegetablePresence?.key).toBe(
+      "diet.dinner.vegetables.presence"
+    );
+    expect(vegetablePresence?.meal).toBe("dinner");
+    expect(vegetablePresence?.food).toBe("vegetables");
+
+    const amount = detectPersonaDetailRequest(
+      "夕食の時に食べる野菜はどれぐらいの量ですか",
+      vegetablePresence
+    );
+    expect(amount?.key).toBe("diet.dinner.vegetables.amount");
+    expect(amount?.dimension).toBe("amount");
+  });
+
+  it("uses the corrected clause instead of earlier lunch references", () => {
+    const req = detectPersonaDetailRequest(
+      "昼食と夕食後どこで食べるかではなく夕食の時に野菜を食べているかといった質問です"
+    );
+    expect(req?.key).toBe("diet.dinner.vegetables.presence");
+    expect(req?.isCorrection).toBe(true);
+  });
+
+  it("inherits dinner vegetable focus for a short amount follow-up", () => {
+    const previous = detectPersonaDetailRequest(
+      "夕食の時に野菜は食べていますか"
+    );
+    const amount = detectPersonaDetailRequest(
+      "その野菜はどれくらいの量ですか",
+      previous
+    );
+    expect(amount?.key).toBe("diet.dinner.vegetables.amount");
+  });
+
+  it("rejects a presence-only answer when vegetable amount was asked", () => {
+    const request = detectPersonaDetailRequest(
+      "夕食の時に食べる野菜はどれぐらいの量ですか"
+    );
+    expect(request).not.toBeNull();
+    expect(
+      isPersonaDetailAnswerValid(
+        request!,
+        "野菜は、夕食の食事の際に食べます。"
+      )
+    ).toBe(false);
+    expect(
+      isPersonaDetailAnswerValid(
+        request!,
+        "夕食では野菜は小鉢1皿くらいです。"
+      )
+    ).toBe(true);
+  });
+
+  it("returns a concrete amount after confirming dinner vegetables", () => {
+    const s = barberScenario();
+    const presence = detectPersonaDetailRequest(
+      "夕食の時に野菜は食べていますか"
+    )!;
+    const memory: PersonaSessionMemory = {
+      "diet.dinner.items":
+        "夕食は家で、ご飯と主菜に野菜のおかずを一品付けています。",
+    };
+    const presenceReply = generatePersonaConsistentFallbackDetail(
+      s,
+      presence,
+      memory
+    );
+    expect(presenceReply).toMatch(/夕食/);
+    expect(presenceReply).toMatch(/野菜/);
+
+    const amount = detectPersonaDetailRequest(
+      "夕食の時に食べる野菜はどれぐらいの量ですか",
+      presence
+    )!;
+    const amountReply = generatePersonaConsistentFallbackDetail(
+      s,
+      amount,
+      {
+        ...memory,
+        [presence.key]: presenceReply,
+      }
+    );
+    expect(amountReply).toMatch(/小鉢|皿|片手|品/);
+    expect(amountReply).not.toBe(presenceReply);
   });
 
   it("normalizes record-like sentence endings", () => {
