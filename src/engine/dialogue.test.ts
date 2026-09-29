@@ -265,6 +265,17 @@ describe("dialogue regression", () => {
     ).toBe("work.pattern.items");
   });
 
+  it("does not leak dinner-vegetable context into a new alcohol topic", () => {
+    const previous = detectPersonaDetailRequest(
+      "夕食の時に野菜は食べていますか"
+    );
+    const alcohol = detectPersonaDetailRequest(
+      "お酒は週に何回くらい飲みますか",
+      previous
+    );
+    expect(alcohol?.key).toBe("alcohol.pattern.frequency");
+  });
+
   it("normalizes record-like sentence endings", () => {
     expect(
       normalizeClientSpeech("朝食は家庭で食べることが多い")
