@@ -322,64 +322,6 @@ function dietFallback(
     ]);
   }
 
-  const relatedMemory = Object.entries(memory)
-    .filter(([memoryKey]) => {
-      if (request.meal && !memoryKey.includes(`.${request.meal}.`)) return false;
-      if (request.food && !memoryKey.includes(`.${request.food}.`)) return false;
-      return true;
-    })
-    .map(([, value]) => value)
-    .join(" ");
-
-  if (request.meal && request.food && request.dimension === "presence") {
-    if (
-      request.food === "vegetables" &&
-      /野菜|サラダ|副菜|青菜|根菜|トマト|キャベツ/.test(relatedMemory)
-    ) {
-      return `はい、${mealLabels[request.meal]}では野菜も食べています。`;
-    }
-
-    if (request.food === "vegetables") {
-      return pickStable(seed, [
-        `はい、${mealLabels[request.meal]}では野菜のおかずを一品食べることがあります。`,
-        `はい、${mealLabels[request.meal]}ではサラダや副菜として野菜を食べています。`,
-      ]);
-    }
-
-    return `はい、${mealLabels[request.meal]}では${foodLabels[request.food]}を食べることがあります。`;
-  }
-
-  if (request.food === "vegetables" && request.dimension === "amount") {
-    const mealPrefix = request.meal ? `${mealLabels[request.meal]}では、` : "";
-    return pickStable(seed, [
-      `${mealPrefix}野菜は小鉢1皿くらいです。サラダなら片手に軽くのるくらいの量だと思います。`,
-      `${mealPrefix}野菜のおかずは小鉢1皿程度で、たくさん食べるというほどではありません。`,
-      `${mealPrefix}野菜は副菜を1品食べるくらいです。量としては小鉢1皿くらいだと思います。`,
-    ]);
-  }
-
-  if (request.food === "vegetables" && request.dimension === "items") {
-    const mealPrefix = request.meal ? `${mealLabels[request.meal]}では、` : "";
-    return pickStable(seed, [
-      `${mealPrefix}キャベツやレタス、トマトなどをサラダで食べることがあります。あとは味噌汁に野菜が入っていることもあります。`,
-      `${mealPrefix}青菜のおひたしや煮物、サラダなどを食べることがあります。`,
-    ]);
-  }
-
-  if (request.meal && request.food === "noodles" && request.dimension === "items") {
-    return pickStable(seed, [
-      `${mealLabels[request.meal]}で麺類を食べる時は、うどんやそばが多いです。時々ラーメンを選ぶこともあります。`,
-      `${mealLabels[request.meal]}の麺類は、うどん、そば、ラーメンあたりを選ぶことが多いです。`,
-    ]);
-  }
-
-  if (request.meal && request.food && request.dimension === "frequency") {
-    return pickStable(seed, [
-      `${mealLabels[request.meal]}で${foodLabels[request.food]}を食べるのは、週に3〜4日くらいです。`,
-      `${mealLabels[request.meal]}では、${foodLabels[request.food]}を週に4日くらい食べています。`,
-    ]);
-  }
-
   if (key.startsWith("diet.breakfast.items")) {
     if (/パン|トースト/.test(diet)) {
       return "朝はトーストに卵やヨーグルトを合わせることが多いです。野菜は毎朝ではありません。";
