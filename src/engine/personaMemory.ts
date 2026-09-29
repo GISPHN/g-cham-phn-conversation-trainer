@@ -148,9 +148,32 @@ export function detectPersonaDetailRequest(
   const hasDietContext =
     Boolean(meal || food) ||
     /食事|食べ|摂|取/.test(focus) ||
-    Boolean(previous && followupCue);
+    Boolean(previous && followupCue && (previous.meal || previous.food));
 
-  if (!hasDietContext) return null;
+  if (!hasDietContext) {
+    const nonDietTopics: Array<[RegExp, string, string]> = [
+      [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
+      [/睡眠|寝る|眠る|就寝|起床/, "sleep.pattern", "睡眠"],
+      [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
+      [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
+    ];
+    const topic = nonDietTopics.find(([regex]) => regex.test(focus));
+    if (!topic) return null;
+
+    const explicitDetail =
+      dimension !== "detail" ||
+      isCorrection ||
+      /具体的|詳しく|どのよう|どんな|どれくらい|どのくらい/.test(focus);
+    if (!explicitDetail) return null;
+
+    return {
+      key: `${topic[1]}.${dimension}`,
+      label: topic[2],
+      dimension,
+      isCorrection,
+      queryText: text,
+    };
+  }
 
   const explicitDetail =
     dimension !== "detail" ||
