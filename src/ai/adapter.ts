@@ -1,6 +1,6 @@
 import * as webllm from "@mlc-ai/web-llm";
 import { ConversationState, Message, Scenario, TurnAnalysis } from "../domain/types";
-import { formatSessionMemory, PersonaDetailRequest, PersonaSessionMemory } from "../engine/personaMemory";
+import { formatSessionMemory, isPersonaDetailAnswerValid, PersonaDetailRequest, PersonaSessionMemory } from "../engine/personaMemory";
 
 export type AIReplyInput = {
   scenario: Scenario;
@@ -236,9 +236,14 @@ export async function generatePersonaDetail(
     formatSessionMemory(input.sessionMemory) +
     "\n\n【今回の詳細生成】\n" +
     `対象項目: ${input.request.label}\n` +
+    `食事場面: ${input.request.meal ?? "指定なし"}\n` +
+    `食品: ${input.request.food ?? "指定なし"}\n` +
+    `質問次元: ${input.request.dimension}\n` +
     `JMED-Personas由来の関連情報: ${input.evidence || "明示なし"}\n` +
     `保健師の質問: ${input.latestUserText}\n\n` +
     "人物背景と既存の追加設定に矛盾しない範囲で、質問された下位項目そのものに直接答える具体的な内容を1〜2文で生成してください。" +
+    "質問次元がamountなら量を、frequencyなら頻度を、itemsなら種類や具体例を、presenceなら食べているかどうかを必ず直接答えてください。" +
+    "amountを聞かれているのに『食べています』だけで終わる、itemsを聞かれているのに『食べます』だけで終わる、といった回答は禁止です。" +
     "ここでは会話シミュレーションの一貫性を保つため、食品名、選び方、時間帯、頻度などの生活上の細部を補って構いません。" +
     "ただし病名、検査値、服薬、家族歴、収入額など医学的・社会経済的な新規事実は作らないでください。" +
     "一度ここで決めた内容は以後この対象者の設定として固定されるため、既存設定と整合させてください。" +
@@ -278,7 +283,9 @@ export async function generatePersonaDetail(
           !input.evidence.includes(term) &&
           !input.latestUserText.includes(term)
       );
-      if (!introducedMedical) return text;
+      if (!introducedMedical && isPersonaDetailAnswerValid(input.request, text)) {
+        return text;
+      }
     }
   }
 
