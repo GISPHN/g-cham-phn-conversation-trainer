@@ -1,67 +1,172 @@
-import { Persona, Scenario } from "../domain/types";
+import { Persona, Scenario } from "../domain/types";\n\nexport type PersonaSessionMemory = Record<string, string>;
 
-export type PersonaSessionMemory = Record<string, string>;
+export type PersonaDetailDimension =
+  | "presence"
+  | "items"
+  | "frequency"
+  | "amount"
+  | "time"
+  | "detail";
+
+export type PersonaMealContext = "breakfast" | "lunch" | "dinner";
+export type PersonaFoodContext =
+  | "vegetables"
+  | "fruit"
+  | "meat"
+  | "fish"
+  | "noodles"
+  | "bread"
+  | "rice"
+  | "staple"
+  | "snack"
+  | "eatingout"
+  | "protein";
 
 export type PersonaDetailRequest = {
   key: string;
   label: string;
+  dimension: PersonaDetailDimension;
+  meal?: PersonaMealContext;
+  food?: PersonaFoodContext;
   isCorrection?: boolean;
   queryText?: string;
 };
 
 const compact = (text: string) => text.replace(/\s+/g, "");
 
-function detailDimension(text: string): string {
+function correctionFocus(text: string): string {
+  const compacted = compact(text);
+  const markers = ["ではなく", "じゃなく", "そうではなく", "聞きたいのは"];
+  let focus = compacted;
+  for (const marker of markers) {
+    const index = focus.lastIndexOf(marker);
+    if (index >= 0) focus = focus.slice(index + marker.length);
+  }
+  return focus;
+}
+
+function detailDimension(text: string): PersonaDetailDimension {
   const t = compact(text);
+  if (/どれくらい|どのくらい|量|何皿|何個|何杯|何グラム|何g|どの程度/.test(t)) return "amount";
+  if (/何回|頻度|週に|1週間|一週間|毎日|何日|何度/.test(t)) return "frequency";
+  if (/何時|時間帯|いつ食べ|何時頃|何時ぐらい/.test(t)) return "time";
   if (/どんな|どのような|何を|種類|具体的|詳しく|詳しい|料理名|メニュー|献立|中身|内容/.test(t)) return "items";
-  if (/何回|頻度|週に|毎日|何日/.test(t)) return "frequency";
-  if (/どれくらい|どのくらい|量|何皿|何個|何杯/.test(t)) return "amount";
-  if (/何時|時間帯|いつ食べ|何時頃/.test(t)) return "time";
+  if (/(食べていますか|食べますか|摂っていますか|取っていますか|ありますか|していますか)[？?]?$/.test(t)) return "presence";
   return "detail";
 }
 
-export function detectPersonaDetailRequest(
-  text: string
-): PersonaDetailRequest | null {
+function detectMeal(text: string): PersonaMealContext | undefined {
   const t = compact(text);
-  const dimension = detailDimension(t);
+  if (/朝食|朝ごはん|朝ご飯/.test(t)) return "breakfast";
+  if (/昼食|昼ごはん|昼ご飯|お昼ごはん|お昼ご飯|ランチ/.test(t)) return "lunch";
+  if (/夕食|夕ごはん|夕ご飯|夕飯|晩ごはん|晩ご飯/.test(t)) return "dinner";
+  return undefined;
+}
+
+function detectFood(text: string): PersonaFoodContext | undefined {
+  const t = compact(text);
+  if (/野菜|サラダ/.test(t)) return "vegetables";
+  if (/果物|フルーツ/.test(t)) return "fruit";
+  if (/うどん|そば|蕎麦|ラーメン|パスタ|スパゲッティ|焼きそば|そうめん|素麺|麺類|麺/.test(t)) return "noodles";
+  if (/肉|肉料理/.test(t)) return "meat";
+  if (/魚|魚料理/.test(t)) return "fish";
+  if (/パン|食パン|トースト/.test(t)) return "bread";
+  if (/ご飯|米飯|白米|玄米|米/.test(t)) return "rice";
+  if (/主食/.test(t)) return "staple";
+  if (/間食|お菓子|菓子|おやつ/.test(t)) return "snack";
+  if (/外食|惣菜|弁当/.test(t)) return "eatingout";
+  if (/たんぱく|タンパク|蛋白/.test(t)) return "protein";
+  return undefined;
+}
+
+const mealLabels: Record<PersonaMealContext, string> = {
+  breakfast: "朝食",
+  lunch: "昼食",
+  dinner: "夕食",
+};
+
+const foodLabels: Record<PersonaFoodContext, string> = {
+  vegetables: "野菜",
+  fruit: "果物",
+  meat: "肉料理",
+  fish: "魚料理",
+  noodles: "麺類",
+  bread: "パン",
+  rice: "ご飯",
+  staple: "主食",
+  snack: "間食",
+  eatingout: "外食・惣菜",
+  protein: "たんぱく質",
+};
+
+function buildDetailKey(
+  meal: PersonaMealContext | undefined,
+  food: PersonaFoodContext | undefined,
+  dimension: PersonaDetailDimension
+): string {
+  const parts = ["diet"];
+  if (meal) parts.push(meal);
+  if (food) parts.push(food);
+  parts.push(dimension);
+  return parts.join(".");
+}
+
+function buildDetailLabel(
+  meal: PersonaMealContext | undefined,
+  food: PersonaFoodContext | undefined
+): string {
+  if (meal && food) return `${mealLabels[meal]}時の${foodLabels[food]}`;
+  if (meal) return mealLabels[meal];
+  if (food) return foodLabels[food];
+  return "食生活";
+}
+
+export function detectPersonaDetailRequest(
+  text: string,
+  previous?: PersonaDetailRequest | null
+): PersonaDetailRequest | null {
+  const original = compact(text);
   const isCorrection =
-    /ではなく|じゃなく|違います|違う|そうではなく|聞いています|聞きたいのは/.test(t);
+    /ではなく|じゃなく|違います|違う|そうではなく|聞いています|聞きたいのは/.test(original);
+  const focus = isCorrection ? correctionFocus(text) : original;
+  const dimension = detailDimension(focus);
 
-  const topics: Array<[RegExp, string, string]> = [
-    // Specific food groups must be checked before broader meal/staple categories.
-    [/うどん|そば|蕎麦|ラーメン|パスタ|スパゲッティ|焼きそば|そうめん|素麺|麺類|麺/, "diet.noodles", "麺類"],
-    [/朝食|朝ごはん|朝ご飯/, "diet.breakfast", "朝食"],
-    [/昼食|昼ごはん|昼ご飯|お昼ごはん|お昼ご飯|ランチ/, "diet.lunch", "昼食"],
-    [/夕食|夕ごはん|夕ご飯|夕飯|晩ごはん|晩ご飯/, "diet.dinner", "夕食"],
-    [/野菜|サラダ/, "diet.vegetables", "野菜"],
-    [/果物|フルーツ/, "diet.fruit", "果物"],
-    [/肉|肉料理/, "diet.meat", "肉料理"],
-    [/魚|魚料理/, "diet.fish", "魚料理"],
-    [/パン|食パン|トースト/, "diet.bread", "パン"],
-    [/ご飯|米飯|白米|玄米|米/, "diet.rice", "ご飯"],
-    [/主食/, "diet.staple", "主食"],
-    [/間食|お菓子|菓子|おやつ/, "diet.snack", "間食"],
-    [/外食|惣菜|弁当/, "diet.eatingout", "外食・惣菜"],
-    [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
-    [/睡眠|寝る|眠る|就寝|起床/, "sleep.pattern", "睡眠"],
-    [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
-    [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
-  ];
+  let meal = detectMeal(focus);
+  let food = detectFood(focus);
 
-  const topic = topics.find(([regex]) => regex.test(t));
-  if (!topic) return null;
+  const followupCue =
+    /^(その|それ|では|じゃあ|ちなみに|どれくらい|どのくらい|量は|何日|何回)/.test(focus) ||
+    dimension !== "detail";
 
-  const specificQuestion =
-    /どんな|どのような|何を|具体的|種類|詳しく|詳しい|料理名|メニュー|献立|中身|内容|例えば|たとえば|何回|頻度|週に|1週間|一週間|毎日|何日|どれくらい|どのくらい|量|何皿|何個|何杯|何時|時間帯|いつ/.test(
-      t
-    );
+  if (previous && followupCue && !isCorrection) {
+    if (!meal && previous.meal) meal = previous.meal;
+    if (!food && previous.food) food = previous.food;
+  }
 
-  if (!specificQuestion && !isCorrection) return null;
+  const hasDietContext =
+    Boolean(meal || food) ||
+    /食事|食べ|摂|取/.test(focus) ||
+    Boolean(previous && followupCue);
+
+  if (!hasDietContext) return null;
+
+  const explicitDetail =
+    dimension !== "detail" ||
+    isCorrection ||
+    Boolean(meal && food) ||
+    /具体的|詳しく|どのよう|どんな|どれくらい|どのくらい/.test(focus);
+
+  if (!explicitDetail) return null;
+
+  const resolvedDimension =
+    dimension === "detail" && meal && food ? "presence" : dimension;
 
   return {
-    key: `${topic[1]}.${dimension}`,
-    label: topic[2],
+    key: buildDetailKey(meal, food, resolvedDimension),
+    label: buildDetailLabel(meal, food),
+    dimension: resolvedDimension,
+    meal,
+    food,
     isCorrection,
     queryText: text,
   };
