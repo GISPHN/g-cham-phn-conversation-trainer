@@ -324,7 +324,7 @@ const topicDefinitions: TopicDefinition[] = [
     domain: "motivation",
     baseKey: "motivation.change",
     label: "行動変容への気持ち",
-    patterns: [/やる気|意欲|変えたい|改善したい|取り組み|自信|できそう|続けられ|目標/],
+    patterns: [/やる気|意欲|変えたい|改善したい|取り組|自信|できそう|続けられ|目標|重要|準備|変えること|変えたら|メリット|デメリット/],
   },
 ];
 
@@ -424,7 +424,22 @@ export function detectPersonaDetailRequest(
   }
 
   const explicitTopic = detectExplicitTopic(focus);
-  if (explicitTopic) {
+  const motivationDimensions: PersonaDetailDimension[] = [
+    "confidence",
+    "importance",
+    "readiness",
+    "benefit",
+    "disadvantage",
+    "goal",
+    "strategy",
+  ];
+  const resolvedTopic =
+    explicitTopic ??
+    (motivationDimensions.includes(dimension)
+      ? topicDefinitions.find((topic) => topic.domain === "motivation")
+      : undefined);
+
+  if (resolvedTopic) {
     const explicitDetail =
       dimension !== "detail" ||
       isCorrection ||
@@ -432,18 +447,18 @@ export function detectPersonaDetailRequest(
 
     if (!explicitDetail) return null;
 
-    const subject = detectDetailSubject(explicitTopic.domain, focus);
+    const subject = detectDetailSubject(resolvedTopic.domain, focus);
 
     return {
       key: buildDomainDetailKey(
-        explicitTopic.domain,
-        explicitTopic.baseKey,
+        resolvedTopic.domain,
+        resolvedTopic.baseKey,
         subject,
         dimension
       ),
-      label: subject?.label ?? explicitTopic.label,
-      domain: explicitTopic.domain,
-      subject: subject?.key ?? explicitTopic.baseKey.split(".")[1],
+      label: subject?.label ?? resolvedTopic.label,
+      domain: resolvedTopic.domain,
+      subject: subject?.key ?? resolvedTopic.baseKey.split(".")[1],
       dimension,
       isCorrection,
       queryText: text,
