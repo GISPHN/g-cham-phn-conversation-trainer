@@ -118,8 +118,12 @@ function detailDimension(text: string): PersonaDetailDimension {
     return "benefit";
   }
 
+  if (/(吸いたく|飲みたく).*(どんな時|いつ|時に)|(?:どんな時|いつ).*(吸いたく|飲みたく)/.test(t)) {
+    return "trigger";
+  }
+
   if (
-    /難しい理由|難しいこと|難しい点|難しい|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく/.test(
+    /難しい理由|難しいこと|難しい点|難しい|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく|しにく|行きにく|受けにく|遠くて/.test(
       t
     )
   ) {
@@ -152,7 +156,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   if (/何回|頻度|週に|1週間|一週間|毎日|何日|何度|月に|年に/.test(t)) {
     return "frequency";
   }
-  if (/何分|何時間|どのくらいの時間|どれくらいの時間|どのくらい続|どれくらい続|期間/.test(t)) {
+  if (/何分|何時間|どのくらいの時間|どれくらいの時間|どのくらい.*時間|どれくらい.*時間|どのくらい続|どれくらい続|期間/.test(t)) {
     return "duration";
   }
   if (/何時|時間帯|いつ|何時頃|何時ごろ|何時ぐらい|何時くらい|何曜日/.test(t)) {
@@ -182,7 +186,7 @@ function detailDimension(text: string): PersonaDetailDimension {
     return "items";
   }
   if (
-    /(食べていますか|食べますか|摂っていますか|取っていますか|していますか|ありますか|飲みますか|吸いますか|眠れますか|通っていますか|受けていますか|使っていますか|頼れますか)[？?]?$/.test(
+    /(食べていますか|食べますか|摂っていますか|取っていますか|していますか|ありますか|いますか|飲みますか|吸いますか|眠れますか|通っていますか|受けていますか|使っていますか|頼れますか)[？?]?$/.test(
       t
     )
   ) {
@@ -259,19 +263,19 @@ const topicDefinitions: TopicDefinition[] = [
     domain: "exercise",
     baseKey: "exercise.activity",
     label: "運動・身体活動",
-    patterns: [/運動|身体活動|歩く|歩行|ウォーキング|ジョギング|筋トレ|階段|スポーツ/],
+    patterns: [/運動|身体活動|歩く|歩行|ウォーキング|ジョギング|筋トレ|階段|スポーツ|座位|座って|座り/],
   },
   {
     domain: "sleep",
     baseKey: "sleep.pattern",
     label: "睡眠・休養",
-    patterns: [/睡眠|寝|眠|就寝|起床|目覚め|休養|昼寝|眠気/],
+    patterns: [/睡眠|寝|眠|就寝|起床|起き|目覚め|休養|昼寝|眠気/],
   },
   {
     domain: "medication",
     baseKey: "medication.use",
     label: "服薬",
-    patterns: [/服薬|処方薬|薬を|薬は|飲み忘れ|内服|薬局/],
+    patterns: [/服薬|処方薬|薬を|薬は|薬について|薬が|薬の|飲み忘れ|内服|薬局/],
   },
   {
     domain: "checkup",
@@ -301,7 +305,7 @@ const topicDefinitions: TopicDefinition[] = [
     domain: "family",
     baseKey: "family.relationship",
     label: "家族・同居状況",
-    patterns: [/家族|同居|独居|一人暮らし|配偶者|夫|妻|子ども|子供|親|介護/],
+    patterns: [/家族|同居|独居|一人暮らし|暮らし|暮らして|配偶者|夫婦|夫(?:と|が|は|に|の|を|へ|です|、|。|$)|妻|子ども|子供|親|介護|誰に.*相談|相談できる人|相談相手/],
   },
   {
     domain: "social",
@@ -369,6 +373,29 @@ function detectExplicitTopic(text: string): TopicDefinition | undefined {
   );
 }
 
+function detectPriorityTopic(text: string): TopicDefinition | undefined {
+  const t = compact(text);
+  const byDomain = (domain: PersonaDetailDomain) =>
+    topicDefinitions.find((topic) => topic.domain === domain);
+
+  if (/食費|医療費|薬代|家計|金銭|経済的|費用面/.test(t)) {
+    return byDomain("finance");
+  }
+  if (/ストレス|気分転換/.test(t)) {
+    return byDomain("stress");
+  }
+  if (/薬について|薬の不安|薬の心配|副作用/.test(t)) {
+    return byDomain("medication");
+  }
+  if (/家族.{0,12}病気|病気.{0,12}家族/.test(t)) {
+    return byDomain("medical");
+  }
+  if (/誰と.{0,8}暮ら|誰に.{0,8}相談|相談できる人|相談相手/.test(t)) {
+    return byDomain("family");
+  }
+  return undefined;
+}
+
 function isAnaphoricFollowup(text: string, dimension: PersonaDetailDimension): boolean {
   const t = compact(text);
   return (
@@ -393,8 +420,9 @@ export function detectPersonaDetailRequest(
 
   const meal = detectMeal(focus);
   const food = detectFood(focus);
+  const priorityTopic = detectPriorityTopic(focus);
 
-  if (isDietCue(focus) || meal || food) {
+  if (!priorityTopic && (isDietCue(focus) || meal || food)) {
     const inheritedMeal =
       !meal && previous?.domain === "diet" && isAnaphoricFollowup(focus, dimension)
         ? previous.meal
@@ -430,7 +458,7 @@ export function detectPersonaDetailRequest(
     };
   }
 
-  const explicitTopic = detectExplicitTopic(focus);
+  const explicitTopic = priorityTopic ?? detectExplicitTopic(focus);
   const motivationDimensions: PersonaDetailDimension[] = [
     "confidence",
     "importance",
@@ -439,6 +467,7 @@ export function detectPersonaDetailRequest(
     "disadvantage",
     "goal",
     "strategy",
+    "barrier",
   ];
   const resolvedTopic =
     explicitTopic ??
@@ -453,6 +482,21 @@ export function detectPersonaDetailRequest(
       /具体的|詳しく|どのよう|どんな|どうですか|どうでした|教えて|聞かせて/.test(focus);
 
     if (!explicitDetail) return null;
+
+    if (
+      previous &&
+      previous.domain === resolvedTopic.domain &&
+      /^(その日|その時|その場合|それは|そこでは)/.test(focus)
+    ) {
+      const previousBase = previous.key.split(".").slice(0, -1).join(".");
+      return {
+        ...previous,
+        key: `${previousBase}.${dimension}`,
+        dimension,
+        isCorrection,
+        queryText: text,
+      };
+    }
 
     const subject = detectDetailSubject(resolvedTopic.domain, focus);
 
@@ -732,7 +776,7 @@ export function isPersonaDetailAnswerValid(
     case "confidence":
       return /自信|できそう|できる|難しい|不安|続けられ/.test(text);
     case "importance":
-      return /大切|重要|気になる|優先|必要/.test(text);
+      return /大切|大事|重要|気になる|優先|必要/.test(text);
     case "goal":
       return /目標|したい|やってみ|変え|増や|減ら|続け/.test(text);
     case "readiness":
@@ -750,13 +794,13 @@ export function isPersonaDetailAnswerValid(
         text
       );
     case "context":
-      return /家|自宅|職場|外|一人|家族|友人|店|通勤|勤務/.test(text);
+      return /家|自宅|職場|外|一人|家族|友人|店|通勤|勤務|朝食|昼食|夕食|食事|会食|飲み会/.test(text);
     case "preference":
       return /好き|嫌い|選ぶ|好み|方が|ほしい/.test(text);
     case "change":
       return /変わ|増え|減っ|以前|前より|最近/.test(text);
     case "presence":
-      return /はい|いいえ|してい|しています|してません|ありません|あります|食べ|飲み|吸い|通い|受け|使っ/.test(
+      return /はい|いいえ|してい|しています|してません|ありません|あります|ある|ない|なし|いる|いない|食べ|飲み|吸い|通い|受け|使っ/.test(
         text
       );
     case "items":
@@ -898,6 +942,13 @@ function dietFallback(
 
   if (request.dimension === "amount") {
     return `${request.label}の量は特に計っていませんが、食べる時は一人分くらいだと思います。`;
+  }
+
+  if (request.dimension === "barrier") {
+    if (/忙|残業|不規則|外回り/.test(p.occupation + (p.personaLifestyleBackground ?? ""))) {
+      return "仕事の時間が不規則なので、毎日同じように食事を整えるのが難しいです。";
+    }
+    return "毎日同じように続けることが難しいです。";
   }
 
   return naturalUnknown(p, request.label);
@@ -1052,6 +1103,38 @@ function softDomainFallback(
   if (request.domain === "exercise" && request.dimension === "time") {
     if (workBusy) return "仕事の日は時間が一定ではないので、できるとしたら帰宅後か休日です。";
     return "平日は夕方か帰宅後、休日は日中にすることが多いです。";
+  }
+
+  if (request.domain === "exercise" && request.dimension === "frequency") {
+    if (request.subject === "walking" && /通勤|移動|外回り/.test(p.exercise + p.occupation)) {
+      return "歩くのは週に4〜5日くらいで、主に通勤や仕事の移動の時です。";
+    }
+    if (/定期的.*ない|運動.*なし|ほとんど/.test(p.exercise)) {
+      return "運動として決めている回数は週0回で、日常の移動で歩く程度です。";
+    }
+    return "週に2〜3回くらいです。";
+  }
+
+  if (request.domain === "smoking" && request.dimension === "amount") {
+    if (/吸わない|非喫煙|禁煙|なし/.test(p.smoking)) return "今は1日0本です。";
+    return pickStable(seed, [
+      "1日10本くらいです。",
+      "1日15本くらいです。",
+      "1日5〜10本くらいです。",
+    ]);
+  }
+
+  if (request.domain === "sleep" && request.dimension === "duration") {
+    const m = p.sleep.match(/[0-9０-９]+(?:〜|～|-)[0-9０-９]+時間(?:程度|くらい)?|[0-9０-９]+時間(?:程度|くらい)?/);
+    if (m) return `普段の睡眠は${m[0]}です。`;
+    return "普段は6時間くらいです。";
+  }
+
+  if (request.domain === "work" && request.dimension === "time") {
+    if (request.subject === "overtime") return "残業の日は20時から21時頃に終わることが多いです。";
+    return workBusy
+      ? "普段は19時頃に終わりますが、残業の日は20時を過ぎることがあります。"
+      : "普段は18時頃に仕事が終わります。";
   }
 
   if (request.domain === "sleep" && request.dimension === "time") {
