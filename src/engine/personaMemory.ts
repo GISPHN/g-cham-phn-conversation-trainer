@@ -1,4 +1,4 @@
-import { Persona, Scenario } from "../domain/types";
+import { ConversationState, Persona, Scenario } from "../domain/types";
 
 export type PersonaSessionMemory = Record<string, string>;
 
@@ -8,9 +8,41 @@ export type PersonaDetailDimension =
   | "frequency"
   | "amount"
   | "time"
+  | "duration"
+  | "intensity"
+  | "reason"
+  | "barrier"
+  | "trigger"
+  | "context"
+  | "history"
+  | "support"
+  | "preference"
+  | "change"
+  | "confidence"
+  | "importance"
+  | "goal"
   | "detail";
 
+export type PersonaDetailDomain =
+  | "diet"
+  | "exercise"
+  | "smoking"
+  | "alcohol"
+  | "sleep"
+  | "work"
+  | "checkup"
+  | "medical"
+  | "medication"
+  | "family"
+  | "social"
+  | "finance"
+  | "healthcare"
+  | "values"
+  | "stress"
+  | "motivation";
+
 export type PersonaMealContext = "breakfast" | "lunch" | "dinner";
+
 export type PersonaFoodContext =
   | "vegetables"
   | "fruit"
@@ -22,11 +54,15 @@ export type PersonaFoodContext =
   | "staple"
   | "snack"
   | "eatingout"
-  | "protein";
+  | "protein"
+  | "sweets"
+  | "beverage";
 
 export type PersonaDetailRequest = {
   key: string;
   label: string;
+  domain: PersonaDetailDomain;
+  subject?: string;
   dimension: PersonaDetailDimension;
   meal?: PersonaMealContext;
   food?: PersonaFoodContext;
@@ -34,11 +70,25 @@ export type PersonaDetailRequest = {
   queryText?: string;
 };
 
+type TopicDefinition = {
+  domain: PersonaDetailDomain;
+  baseKey: string;
+  label: string;
+  patterns: RegExp[];
+};
+
 const compact = (text: string) => text.replace(/\s+/g, "");
 
 function correctionFocus(text: string): string {
   const compacted = compact(text);
-  const markers = ["ではなく", "じゃなく", "そうではなく", "聞きたいのは"];
+  const markers = [
+    "ではなく",
+    "じゃなく",
+    "そうではなく",
+    "聞きたいのは",
+    "聞いているのは",
+    "質問しているのは",
+  ];
   let focus = compacted;
   for (const marker of markers) {
     const index = focus.lastIndexOf(marker);
@@ -49,11 +99,67 @@ function correctionFocus(text: string): string {
 
 function detailDimension(text: string): PersonaDetailDimension {
   const t = compact(text);
-  if (/どれくらい|どのくらい|量|何皿|何個|何杯|何グラム|何g|どの程度/.test(t)) return "amount";
-  if (/何回|頻度|週に|1週間|一週間|毎日|何日|何度/.test(t)) return "frequency";
-  if (/何時|時間帯|いつ食べ|何時頃|何時ごろ|何時ぐらい|何時くらい/.test(t)) return "time";
-  if (/どんな|どのような|何を|種類|具体的|詳しく|詳しい|料理名|メニュー|献立|中身|内容/.test(t)) return "items";
-  if (/(食べていますか|食べますか|摂っていますか|取っていますか|ありますか|していますか)[？?]?$/.test(t)) return "presence";
+
+  if (
+    /難しい理由|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく/.test(
+      t
+    )
+  ) {
+    return "barrier";
+  }
+  if (/自信|できそう|できると思|続けられそう/.test(t)) return "confidence";
+  if (/大切|重要|優先したい|どのくらい重要/.test(t)) return "importance";
+  if (/目標|どうしたい|変えたい|取り組みたい|やってみたい/.test(t)) return "goal";
+  if (/きっかけ|始めた理由|吸う理由|飲む理由/.test(t)) return "trigger";
+  if (/なぜ|どうして|理由|何があって|どういうわけ/.test(t)) return "reason";
+
+  if (
+    /どれくらいの量|どのくらいの量|量は|量ですか|何皿|何個|何杯|何本|何グラム|何g|何ml|何mL|何合|何人前/.test(
+      t
+    )
+  ) {
+    return "amount";
+  }
+  if (/何回|頻度|週に|1週間|一週間|毎日|何日|何度|月に|年に/.test(t)) {
+    return "frequency";
+  }
+  if (/何分|何時間|どのくらいの時間|どれくらいの時間|どのくらい続|どれくらい続|期間/.test(t)) {
+    return "duration";
+  }
+  if (/何時|時間帯|いつ|何時頃|何時ごろ|何時ぐらい|何時くらい|何曜日/.test(t)) {
+    return "time";
+  }
+  if (/強度|きつさ|どの程度きつ|息が上が|汗をか|速さ|ペース/.test(t)) {
+    return "intensity";
+  }
+  if (/以前|過去|これまで|前にも|昔|やめたこと|試したこと|受けたこと|続いたこと/.test(t)) {
+    return "history";
+  }
+  if (/誰か|家族.*支|支えて|手伝って|協力|相談できる|サポート|頼れる/.test(t)) {
+    return "support";
+  }
+  if (/どこで|場所|職場で|家で|自宅で|外で|一人で|誰と/.test(t)) {
+    return "context";
+  }
+  if (/好み|好き|嫌い|選ぶ|選びたい|どちらが/.test(t)) {
+    return "preference";
+  }
+  if (/変わった|変化|以前と比べ|増えた|減った/.test(t)) return "change";
+  if (
+    /どんな|どのような|何を|種類|具体的|詳しく|詳しい|内容|方法|やり方|メニュー|献立|中身/.test(
+      t
+    )
+  ) {
+    return "items";
+  }
+  if (
+    /(食べていますか|食べますか|摂っていますか|取っていますか|していますか|ありますか|飲みますか|吸いますか|眠れますか|通っていますか|受けていますか|使っていますか|頼れますか)[？?]?$/.test(
+      t
+    )
+  ) {
+    return "presence";
+  }
+
   return "detail";
 }
 
@@ -69,7 +175,9 @@ function detectFood(text: string): PersonaFoodContext | undefined {
   const t = compact(text);
   if (/野菜|サラダ/.test(t)) return "vegetables";
   if (/果物|フルーツ/.test(t)) return "fruit";
-  if (/うどん|そば|蕎麦|ラーメン|パスタ|スパゲッティ|焼きそば|そうめん|素麺|麺類|麺/.test(t)) return "noodles";
+  if (/うどん|そば|蕎麦|ラーメン|パスタ|スパゲッティ|焼きそば|そうめん|素麺|麺類|麺/.test(t)) {
+    return "noodles";
+  }
   if (/肉|肉料理/.test(t)) return "meat";
   if (/魚|魚料理/.test(t)) return "fish";
   if (/パン|食パン|トースト/.test(t)) return "bread";
@@ -78,6 +186,8 @@ function detectFood(text: string): PersonaFoodContext | undefined {
   if (/間食|お菓子|菓子|おやつ/.test(t)) return "snack";
   if (/外食|惣菜|弁当/.test(t)) return "eatingout";
   if (/たんぱく|タンパク|蛋白/.test(t)) return "protein";
+  if (/甘いもの|スイーツ|ケーキ|チョコ/.test(t)) return "sweets";
+  if (/飲み物|ジュース|清涼飲料|コーヒー|お茶/.test(t)) return "beverage";
   return undefined;
 }
 
@@ -99,9 +209,110 @@ const foodLabels: Record<PersonaFoodContext, string> = {
   snack: "間食",
   eatingout: "外食・惣菜",
   protein: "たんぱく質",
+  sweets: "甘いもの",
+  beverage: "飲み物",
 };
 
-function buildDetailKey(
+const topicDefinitions: TopicDefinition[] = [
+  {
+    domain: "smoking",
+    baseKey: "smoking.use",
+    label: "喫煙",
+    patterns: [/喫煙|たばこ|タバコ|煙草|吸って|吸います|禁煙/],
+  },
+  {
+    domain: "alcohol",
+    baseKey: "alcohol.pattern",
+    label: "飲酒",
+    patterns: [/飲酒|お酒|アルコール|ビール|日本酒|焼酎|ワイン|晩酌|飲み会/],
+  },
+  {
+    domain: "exercise",
+    baseKey: "exercise.activity",
+    label: "運動・身体活動",
+    patterns: [/運動|身体活動|歩く|歩行|ウォーキング|ジョギング|筋トレ|階段|スポーツ/],
+  },
+  {
+    domain: "sleep",
+    baseKey: "sleep.pattern",
+    label: "睡眠・休養",
+    patterns: [/睡眠|寝|眠|就寝|起床|目覚め|休養|昼寝|眠気/],
+  },
+  {
+    domain: "medication",
+    baseKey: "medication.use",
+    label: "服薬",
+    patterns: [/服薬|処方薬|薬を|薬は|飲み忘れ|内服|薬局/],
+  },
+  {
+    domain: "checkup",
+    baseKey: "checkup.result",
+    label: "健診結果",
+    patterns: [/特定健診|健診|検診|健診結果|腹囲|BMI|体重|血圧|血糖|HbA1c|LDL|中性脂肪|コレステロール/],
+  },
+  {
+    domain: "healthcare",
+    baseKey: "healthcare.access",
+    label: "受診・医療アクセス",
+    patterns: [/かかりつけ|通院|受診|病院|医院|クリニック|医療機関|通院手段|受診手段/],
+  },
+  {
+    domain: "medical",
+    baseKey: "medical.history",
+    label: "健康・既往歴",
+    patterns: [/病気|既往|診断|症状|治療|家族歴|持病|健康状態|体調/],
+  },
+  {
+    domain: "work",
+    baseKey: "work.pattern",
+    label: "仕事・勤務",
+    patterns: [/仕事|勤務|職場|残業|夜勤|交代勤務|働|通勤|休憩/],
+  },
+  {
+    domain: "family",
+    baseKey: "family.relationship",
+    label: "家族・同居状況",
+    patterns: [/家族|同居|独居|一人暮らし|配偶者|夫|妻|子ども|子供|親|介護/],
+  },
+  {
+    domain: "social",
+    baseKey: "social.participation",
+    label: "社会参加・人とのつながり",
+    patterns: [/友人|友達|地域活動|社会参加|孤立|人付き合い|交流|近所|コミュニティ/],
+  },
+  {
+    domain: "finance",
+    baseKey: "finance.constraint",
+    label: "経済的な制約",
+    patterns: [/費用|お金|経済|家計|生活費|医療費|食費|金銭/],
+  },
+  {
+    domain: "values",
+    baseKey: "values.priority",
+    label: "価値観・大切にしていること",
+    patterns: [/趣味|楽しみ|大切|生きがい|優先|好きなこと|続けたいこと/],
+  },
+  {
+    domain: "stress",
+    baseKey: "stress.context",
+    label: "ストレス・心理的負担",
+    patterns: [/ストレス|悩み|精神的|気持ち|負担|疲れ|疲労|気分|心配|不安/],
+  },
+  {
+    domain: "motivation",
+    baseKey: "motivation.change",
+    label: "行動変容への気持ち",
+    patterns: [/やる気|意欲|変えたい|改善したい|取り組み|自信|できそう|続けられ|目標/],
+  },
+];
+
+function isDietCue(text: string): boolean {
+  return /食事|食生活|食べ|朝食|昼食|夕食|間食|野菜|果物|主食|外食|惣菜|弁当|飲み物|甘いもの/.test(
+    compact(text)
+  );
+}
+
+function buildDietKey(
   meal: PersonaMealContext | undefined,
   food: PersonaFoodContext | undefined,
   dimension: PersonaDetailDimension
@@ -113,7 +324,7 @@ function buildDetailKey(
   return parts.join(".");
 }
 
-function buildDetailLabel(
+function buildDietLabel(
   meal: PersonaMealContext | undefined,
   food: PersonaFoodContext | undefined
 ): string {
@@ -123,99 +334,238 @@ function buildDetailLabel(
   return "食生活";
 }
 
+function detectExplicitTopic(text: string): TopicDefinition | undefined {
+  return topicDefinitions.find((topic) =>
+    topic.patterns.some((pattern) => pattern.test(text))
+  );
+}
+
+function isAnaphoricFollowup(text: string, dimension: PersonaDetailDimension): boolean {
+  const t = compact(text);
+  return (
+    /^(その|それ|そこ|では|じゃあ|ちなみに|もう少し|具体的には|どれくらい|どのくらい|何回|何分|何時間|何時|なぜ|どうして|理由は|量は)/.test(
+      t
+    ) ||
+    (dimension !== "detail" && t.length <= 24)
+  );
+}
+
 export function detectPersonaDetailRequest(
   text: string,
   previous?: PersonaDetailRequest | null
 ): PersonaDetailRequest | null {
   const original = compact(text);
   const isCorrection =
-    /ではなく|じゃなく|違います|違う|そうではなく|聞いています|聞きたいのは/.test(original);
+    /ではなく|じゃなく|違います|違う|そうではなく|聞いています|聞きたいのは|聞いているのは|質問しているのは/.test(
+      original
+    );
   const focus = isCorrection ? correctionFocus(text) : original;
   const dimension = detailDimension(focus);
 
-  const nonDietTopics: Array<[RegExp, string, string]> = [
-    [/運動|歩く|歩行|身体活動/, "exercise.activity", "運動"],
-    [/睡眠|寝|眠|就寝|起床/, "sleep.pattern", "睡眠"],
-    [/お酒|飲酒|アルコール|ビール|晩酌/, "alcohol.pattern", "飲酒"],
-    [/仕事|勤務|残業|働/, "work.pattern", "仕事"],
-  ];
+  const meal = detectMeal(focus);
+  const food = detectFood(focus);
 
-  const nonDietTopic = nonDietTopics.find(([regex]) => regex.test(focus));
-  if (nonDietTopic) {
+  if (isDietCue(focus) || meal || food) {
+    const inheritedMeal =
+      !meal && previous?.domain === "diet" && isAnaphoricFollowup(focus, dimension)
+        ? previous.meal
+        : meal;
+    const inheritedFood =
+      !food && previous?.domain === "diet" && isAnaphoricFollowup(focus, dimension)
+        ? previous.food
+        : food;
+
     const explicitDetail =
       dimension !== "detail" ||
       isCorrection ||
-      /具体的|詳しく|どのよう|どんな|どれくらい|どのくらい/.test(focus);
+      Boolean(inheritedMeal && inheritedFood) ||
+      /具体的|詳しく|どのよう|どんな/.test(focus);
+
+    if (!explicitDetail) return null;
+
+    const resolvedDimension =
+      dimension === "detail" && inheritedMeal && inheritedFood
+        ? "presence"
+        : dimension;
+
+    return {
+      key: buildDietKey(inheritedMeal, inheritedFood, resolvedDimension),
+      label: buildDietLabel(inheritedMeal, inheritedFood),
+      domain: "diet",
+      subject: inheritedFood ?? inheritedMeal ?? "general",
+      dimension: resolvedDimension,
+      meal: inheritedMeal,
+      food: inheritedFood,
+      isCorrection,
+      queryText: text,
+    };
+  }
+
+  const explicitTopic = detectExplicitTopic(focus);
+  if (explicitTopic) {
+    const explicitDetail =
+      dimension !== "detail" ||
+      isCorrection ||
+      /具体的|詳しく|どのよう|どんな|教えて|聞かせて/.test(focus);
+
     if (!explicitDetail) return null;
 
     return {
-      key: `${nonDietTopic[1]}.${dimension}`,
-      label: nonDietTopic[2],
+      key: `${explicitTopic.baseKey}.${dimension}`,
+      label: explicitTopic.label,
+      domain: explicitTopic.domain,
+      subject: explicitTopic.baseKey.split(".")[1],
       dimension,
       isCorrection,
       queryText: text,
     };
   }
 
-  let meal = detectMeal(focus);
-  let food = detectFood(focus);
-
-  const explicitDietCue =
-    Boolean(meal || food) || /食事|食べ|摂|取/.test(focus);
-  const anaphoricFollowup =
-    /^(その|それ|では|じゃあ|ちなみに|どれくらい|どのくらい|量は|何日|何回|何時)/.test(
-      focus
-    );
-
-  if (previous && anaphoricFollowup && !isCorrection) {
-    if (!meal && previous.meal) meal = previous.meal;
-    if (!food && previous.food) food = previous.food;
+  if (
+    previous &&
+    isAnaphoricFollowup(focus, dimension) &&
+    (dimension !== "detail" || isCorrection)
+  ) {
+    const base = previous.key.split(".").slice(0, -1).join(".");
+    return {
+      ...previous,
+      key: `${base}.${dimension}`,
+      dimension,
+      isCorrection,
+      queryText: text,
+    };
   }
 
-  const hasDietContext =
-    explicitDietCue ||
-    Boolean(previous && anaphoricFollowup && (meal || food));
-
-  if (!hasDietContext) return null;
-
-  const explicitDetail =
-    dimension !== "detail" ||
-    isCorrection ||
-    Boolean(meal && food) ||
-    /具体的|詳しく|どのよう|どんな|どれくらい|どのくらい/.test(focus);
-
-  if (!explicitDetail) return null;
-
-  const resolvedDimension =
-    dimension === "detail" && meal && food ? "presence" : dimension;
-
-  return {
-    key: buildDetailKey(meal, food, resolvedDimension),
-    label: buildDetailLabel(meal, food),
-    dimension: resolvedDimension,
-    meal,
-    food,
-    isCorrection,
-    queryText: text,
-  };
+  return null;
 }
 
-function sourceTextForKey(persona: Persona, key: string): string {
-  if (key.startsWith("diet.")) return persona.diet;
-  if (key.startsWith("exercise.")) return persona.exercise;
-  if (key.startsWith("sleep.")) return persona.sleep;
-  if (key.startsWith("alcohol.")) return persona.alcohol;
-  if (key.startsWith("work.")) {
-    return [persona.occupation, persona.economicConstraint].filter(Boolean).join("。");
+function nonEmpty(parts: Array<string | undefined>): string[] {
+  return parts.map((x) => x?.trim()).filter((x): x is string => Boolean(x));
+}
+
+function labeled(label: string, value?: string): string {
+  return value?.trim() ? `${label}: ${value.trim()}` : "";
+}
+
+function evidenceForDomain(persona: Persona, domain: PersonaDetailDomain): string[] {
+  switch (domain) {
+    case "diet":
+      return nonEmpty([
+        labeled("普段の食生活", persona.diet),
+        labeled("生活習慣記述", persona.personaLifestyle),
+      ]);
+    case "exercise":
+      return nonEmpty([
+        labeled("運動習慣", persona.exercise),
+        labeled("生活習慣記述", persona.personaLifestyle),
+        labeled("大切にしている活動", persona.values),
+        labeled("職業", persona.occupation),
+      ]);
+    case "smoking":
+      return nonEmpty([
+        labeled("喫煙歴", persona.smoking),
+        labeled("生活習慣記述", persona.personaLifestyle),
+      ]);
+    case "alcohol":
+      return nonEmpty([
+        labeled("飲酒歴", persona.alcohol),
+        labeled("生活習慣記述", persona.personaLifestyle),
+      ]);
+    case "sleep":
+      return nonEmpty([
+        labeled("睡眠", persona.sleep),
+        labeled("生活習慣記述", persona.personaLifestyle),
+        labeled("職業", persona.occupation),
+      ]);
+    case "work":
+      return nonEmpty([
+        labeled("職業", persona.occupation),
+        labeled("経済的制約", persona.economicConstraint),
+        labeled("生活背景", persona.personaLifestyleBackground),
+        labeled("生活習慣記述", persona.personaLifestyle),
+      ]);
+    case "checkup":
+      return nonEmpty([
+        labeled("健診歴", persona.checkupHistory),
+        labeled("身長", persona.height),
+        labeled("体重", persona.weight),
+        labeled("BMI", persona.bmi),
+        labeled("バイタルサイン", persona.vitalSigns),
+        labeled("血液検査", persona.bloodTests),
+        labeled("医学的背景", persona.personaMedicalBackground),
+      ]);
+    case "medical":
+      return nonEmpty([
+        labeled("主病名", persona.primaryDiagnosis),
+        labeled("受診理由・主訴", persona.chiefComplaint),
+        labeled("既往歴", persona.pastMedicalHistory),
+        labeled("家族歴", persona.familyHistory),
+        labeled("症状", persona.symptoms),
+        labeled("医学的背景", persona.personaMedicalBackground),
+      ]);
+    case "medication":
+      return nonEmpty([
+        labeled("処方薬", persona.medications),
+        labeled("服薬管理・アドヒアランス", persona.medicationAdherence),
+        labeled("治療方針・治療目標", persona.treatmentGoals),
+      ]);
+    case "family":
+      return nonEmpty([
+        labeled("同居状況", persona.household),
+        labeled("家族関係・キーパーソン", persona.familyRelationship),
+        labeled("家族歴", persona.familyHistory),
+        labeled("生活支援", persona.livingSupport),
+        labeled("生活背景", persona.personaLifestyleBackground),
+      ]);
+    case "social":
+      return nonEmpty([
+        labeled("社会参加・孤立", persona.socialParticipation),
+        labeled("生活支援", persona.livingSupport),
+        labeled("生活背景", persona.personaLifestyleBackground),
+      ]);
+    case "finance":
+      return nonEmpty([
+        labeled("経済的制約", persona.economicConstraint),
+        labeled("生活背景", persona.personaLifestyleBackground),
+      ]);
+    case "healthcare":
+      return nonEmpty([
+        labeled("かかりつけ・医療利用状況", persona.healthcareUse),
+        labeled("医療アクセス・通院手段", persona.healthcareAccess),
+        labeled("居住環境", persona.livingEnvironment),
+        labeled("ADL/IADL", persona.adlIadl),
+      ]);
+    case "values":
+      return nonEmpty([
+        labeled("趣味・大切にしている活動", persona.values),
+        labeled("価値観・心理面", persona.personaPsychology),
+        labeled("代表発話", persona.representativeUtterance),
+      ]);
+    case "stress":
+      return nonEmpty([
+        labeled("価値観・心理面", persona.personaPsychology),
+        labeled("生活背景", persona.personaLifestyleBackground),
+        labeled("統合記述", persona.personaIntegrated),
+        labeled("職業", persona.occupation),
+        labeled("家族関係", persona.familyRelationship),
+      ]);
+    case "motivation":
+      return nonEmpty([
+        labeled("価値観・心理面", persona.personaPsychology),
+        labeled("支援ポイント", persona.personaSupportPoints),
+        labeled("代表発話", persona.representativeUtterance),
+        labeled("大切にしている活動", persona.values),
+        labeled("職業", persona.occupation),
+        labeled("経済的制約", persona.economicConstraint),
+      ]);
   }
-  return "";
 }
 
 export function personaEvidenceForDetail(
   scenario: Scenario,
   request: PersonaDetailRequest
 ): string {
-  return sourceTextForKey(scenario.persona, request.key);
+  return evidenceForDomain(scenario.persona, request.domain).join("\n");
 }
 
 export function formatSessionMemory(memory: PersonaSessionMemory): string {
@@ -224,7 +574,6 @@ export function formatSessionMemory(memory: PersonaSessionMemory): string {
   return entries.map(([key, value]) => `- ${key}: ${value}`).join("\n");
 }
 
-
 export function isPersonaDetailAnswerValid(
   request: PersonaDetailRequest,
   answer: string
@@ -232,39 +581,58 @@ export function isPersonaDetailAnswerValid(
   const text = compact(answer);
   if (!text) return false;
 
-  if (request.dimension === "amount") {
-    const hasAmount =
-      /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|g|グラム|割|品|人分)|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
+  switch (request.dimension) {
+    case "amount":
+      return /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|本|g|グラム|ml|mL|合|割|品|人分)|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
         text
       );
-    return hasAmount;
+    case "frequency":
+      return /週|月|年|毎日|日くらい|回くらい|回程度|何度か|ほぼ毎日|時々|たまに/.test(
+        text
+      );
+    case "duration":
+      return /[0-9０-９一二三四五六七八九十]+(?:分|時間|年|か月|ヶ月)|しばらく|短時間|長時間/.test(
+        text
+      );
+    case "time":
+      return /[0-9０-９一二三四五六七八九十]+時|朝|昼|夕方|夜|帰宅後|起床後|就寝前|勤務前|勤務後/.test(
+        text
+      );
+    case "intensity":
+      return /軽い|中くらい|きつい|息|汗|ゆっくり|速め|強度|ペース/.test(text);
+    case "reason":
+    case "trigger":
+      return /から|ので|ため|きっかけ|理由|思って|気になって/.test(text);
+    case "barrier":
+      return /難|忙|時間|費用|仕事|続|負担|疲|面倒|自信|家族|環境/.test(text);
+    case "support":
+      return /家族|夫|妻|子|友人|職場|同僚|相談|手伝|協力|支援|頼/.test(text);
+    case "confidence":
+      return /自信|できそう|できる|難しい|不安|続けられ/.test(text);
+    case "importance":
+      return /大切|重要|気になる|優先|必要/.test(text);
+    case "goal":
+      return /目標|したい|やってみ|変え|増や|減ら|続け/.test(text);
+    case "history":
+      return /以前|前は|これまで|過去|昔|ことがある|受けた|試した|続いた|やめた/.test(
+        text
+      );
+    case "context":
+      return /家|自宅|職場|外|一人|家族|友人|店|通勤|勤務/.test(text);
+    case "preference":
+      return /好き|嫌い|選ぶ|好み|方が|ほしい/.test(text);
+    case "change":
+      return /変わ|増え|減っ|以前|前より|最近/.test(text);
+    case "presence":
+      return /はい|いいえ|してい|しています|してません|ありません|あります|食べ|飲み|吸い|通い|受け|使っ/.test(
+        text
+      );
+    case "items":
+      return text.length >= 6;
+    case "detail":
+      return text.length >= 4;
   }
-
-  if (request.dimension === "frequency") {
-    return /週|毎日|日くらい|回くらい|何度か|ほぼ毎日|時々/.test(text);
-  }
-
-  if (request.dimension === "time") {
-    return /[0-9０-９一二三四五六七八九十]+時|朝|昼|夕方|夜|帰宅後|起床後/.test(text);
-  }
-
-  if (request.dimension === "items") {
-    if (request.food === "vegetables") {
-      return /キャベツ|レタス|トマト|青菜|根菜|サラダ|煮物|おひたし|味噌汁|野菜/.test(text);
-    }
-    if (request.food === "noodles") {
-      return /うどん|そば|蕎麦|ラーメン|パスタ|焼きそば|そうめん|麺/.test(text);
-    }
-    return text.length >= 8;
-  }
-
-  if (request.dimension === "presence") {
-    return /はい|いいえ|食べて|食べます|食べません|摂って|取って|あります|ありません/.test(text);
-  }
-
-  return text.length >= 4;
 }
-
 
 function stableIndex(seed: string, size: number): number {
   let hash = 2166136261;
@@ -279,6 +647,16 @@ function pickStable(seed: string, values: string[]): string {
   return values[stableIndex(seed, values.length)] ?? values[0];
 }
 
+function naturalUnknown(persona: Persona, label: string): string {
+  if (persona.talkativeness === "low") {
+    return `${label}については、そこまで細かくは意識していないです。`;
+  }
+  if (persona.healthLiteracy === "高") {
+    return `${label}については、普段そこまで細かく記録していないので、今ははっきりとは答えにくいです。`;
+  }
+  return `${label}については、そこまで細かく意識していないので、具体的にはちょっと分からないです。`;
+}
+
 function dietFallback(
   scenario: Scenario,
   request: PersonaDetailRequest,
@@ -288,7 +666,6 @@ function dietFallback(
   const diet = p.diet || "";
   const key = request.key;
   const seed = `${p.id}:${key}`;
-
 
   const relatedMemory = Object.entries(memory)
     .filter(([memoryKey]) => {
@@ -306,14 +683,12 @@ function dietFallback(
     ) {
       return `はい、${mealLabels[request.meal]}では野菜も食べています。`;
     }
-
     if (request.food === "vegetables") {
       return pickStable(seed, [
         `はい、${mealLabels[request.meal]}では野菜のおかずを一品食べることがあります。`,
         `はい、${mealLabels[request.meal]}ではサラダや副菜として野菜を食べています。`,
       ]);
     }
-
     return `はい、${mealLabels[request.meal]}では${foodLabels[request.food]}を食べることがあります。`;
   }
 
@@ -322,14 +697,13 @@ function dietFallback(
     return pickStable(seed, [
       `${mealPrefix}野菜は小鉢1皿くらいです。サラダなら片手に軽くのるくらいの量だと思います。`,
       `${mealPrefix}野菜のおかずは小鉢1皿程度で、たくさん食べるというほどではありません。`,
-      `${mealPrefix}野菜は副菜を1品食べるくらいです。量としては小鉢1皿くらいだと思います。`,
     ]);
   }
 
   if (request.food === "vegetables" && request.dimension === "items") {
     const mealPrefix = request.meal ? `${mealLabels[request.meal]}では、` : "";
     return pickStable(seed, [
-      `${mealPrefix}キャベツやレタス、トマトなどをサラダで食べることがあります。あとは味噌汁に野菜が入っていることもあります。`,
+      `${mealPrefix}キャベツやレタス、トマトなどをサラダで食べることがあります。`,
       `${mealPrefix}青菜のおひたしや煮物、サラダなどを食べることがあります。`,
     ]);
   }
@@ -348,105 +722,33 @@ function dietFallback(
     ]);
   }
 
-  if (key.startsWith("diet.breakfast.items")) {
+  if (key.includes(".breakfast.") && request.dimension === "items") {
     if (/パン|トースト/.test(diet)) {
       return "朝はトーストに卵やヨーグルトを合わせることが多いです。野菜は毎朝ではありません。";
     }
     if (/米飯|ご飯|米/.test(diet)) {
-      return pickStable(seed, [
-        "朝はご飯と味噌汁に、卵や納豆を付けることが多いです。野菜は毎朝ではありません。",
-        "朝はご飯を中心に、味噌汁と卵料理などで簡単に済ませることが多いです。野菜は食べない日もあります。",
-      ]);
+      return "朝はご飯と味噌汁に、卵や納豆を付けることが多いです。野菜は毎朝ではありません。";
     }
-    return pickStable(seed, [
-      "朝はご飯かパンに、卵などを合わせて簡単に済ませることが多いです。",
-      "朝は主食と卵料理など、家にあるもので簡単に食べることが多いです。",
-    ]);
   }
 
-  if (key.startsWith("diet.lunch.items")) {
-    if (/弁当|惣菜|調理済み/.test(diet)) {
-      return pickStable(seed, [
-        "昼は弁当を買ったり、おにぎりと惣菜で済ませたりすることが多いです。忙しい日は麺類だけのこともあります。",
-        "昼はスーパーやコンビニの弁当や惣菜を選ぶことがあります。ご飯ものが中心で、野菜は付いていれば食べる程度です。",
-      ]);
-    }
+  if (key.includes(".lunch.") && request.dimension === "items") {
     if (/外食/.test(diet)) {
-      return pickStable(seed, [
-        "昼は外で定食や丼物を食べることが多いです。時間がない日は麺類で済ませることもあります。",
-        "昼は外食で、ご飯ものや麺類を選ぶことが多いです。野菜は定食の小鉢やサラダがあれば食べます。",
-      ]);
+      return "昼は外で定食や丼物を食べることが多いです。時間がない日は麺類で済ませることもあります。";
     }
-    return "昼はご飯ものを中心に、簡単なおかずを合わせて食べることが多いです。";
+    if (/弁当|惣菜|調理済み/.test(diet)) {
+      return "昼は弁当を買ったり、おにぎりと惣菜で済ませたりすることが多いです。";
+    }
   }
 
-  if (key.startsWith("diet.dinner.items")) {
+  if (key.includes(".dinner.") && request.dimension === "items") {
     if (/家庭|自宅|家で/.test(diet)) {
-      return pickStable(seed, [
-        "夕食は家で、ご飯に肉か魚のおかずと、野菜の副菜を合わせることが多いです。忙しい日は麺類で済ませることもあります。",
-        "夜は家で食べることが多く、ご飯と主菜に、作れる時は野菜のおかずを一品付けています。",
-      ]);
+      return "夕食は家で、ご飯に肉か魚のおかずと、野菜の副菜を合わせることが多いです。";
     }
-    return "夕食はご飯や麺類に、肉か魚のおかずを合わせることが多いです。";
   }
 
-  if (key.startsWith("diet.vegetables.items")) {
-    return pickStable(seed, [
-      "野菜はキャベツやレタス、トマトなどを食べることが多いです。煮物や味噌汁に入っていれば食べることもあります。",
-      "野菜はサラダに入っている葉物やトマト、家では青菜や根菜を食べることがあります。",
-    ]);
-  }
-
-  if (key.startsWith("diet.fruit.items")) {
-    return "果物はバナナやみかんなど、手軽に食べられるものを選ぶことがあります。毎日ではありません。";
-  }
-
-  if (key.startsWith("diet.meat.items")) {
-    return "肉は鶏肉や豚肉のおかずを食べることが多いです。焼いたものや炒め物が多いと思います。";
-  }
-
-  if (key.startsWith("diet.fish.items")) {
-    return "魚は焼き魚や煮魚を食べることがありますが、肉料理より回数は少ないです。";
-  }
-
-  if (key.startsWith("diet.noodles.items")) {
-    return pickStable(seed, [
-      "麺類なら、うどんやそばを食べることが多いです。時間がない時はラーメンや焼きそばで済ませることもあります。",
-      "麺類はうどん、そば、ラーメンあたりが多いです。昼に手早く済ませたい時に選ぶことがあります。",
-      "昼に麺類を食べる時は、うどんやそば、時々ラーメンを選びます。",
-    ]);
-  }
-
-  if (key.startsWith("diet.bread.items")) {
-    return "パンなら食パンやロールパンを食べることが多いです。朝に簡単に済ませたい時に選びます。";
-  }
-
-  if (key.startsWith("diet.rice.items")) {
-    return "ご飯は白いご飯を食べることが多く、丼物や弁当のご飯として食べることもあります。";
-  }
-
-  if (key.startsWith("diet.staple.items")) {
-    if (/麺/.test(diet) && /米|ご飯|米飯/.test(diet)) {
-      return "主食はご飯の日と麺類の日があります。ご飯の方がやや多いと思います。";
-    }
-    if (/麺/.test(diet)) return "主食は麺類を選ぶことが多いです。";
-    if (/米|ご飯|米飯/.test(diet)) return "主食はご飯を食べることが多いです。";
-  }
-
-  if (key.startsWith("diet.snack.items")) {
-    return "間食はお菓子や甘いものを少し食べることがありますが、毎日ではありません。";
-  }
-
-  if (key.startsWith("diet.eatingout.items")) {
-    return "外食では定食や丼物、麺類を選ぶことが多いです。手早く食べられるものを選びがちです。";
-  }
-
-  if (key.endsWith(".frequency")) {
-    if (key.startsWith("diet.vegetables")) {
-      return pickStable(seed, [
-        "野菜は週に5日くらいは食べています。ほとんど食べない日は週に2日くらいあります。",
-        "野菜は週に4日くらいは食べています。十分に取れない日は週に3日くらいあります。",
-      ]);
+  if (request.dimension === "frequency") {
+    if (request.food === "vegetables") {
+      return "野菜は週に5日くらいは食べています。";
     }
     if (/多い|よく|中心/.test(diet)) {
       return `${request.label}は週に4〜5日くらいそうなることがあります。`;
@@ -454,55 +756,142 @@ function dietFallback(
     if (/時々|ことがある|日がある/.test(diet)) {
       return `${request.label}は週に2〜3回くらいです。`;
     }
-    return `${request.label}は毎日ではなく、週に何度かです。`;
   }
 
-  if (key.endsWith(".amount")) {
+  if (request.dimension === "time") {
+    if (request.meal === "breakfast") return "朝食は7時台に食べることが多いです。";
+    if (request.meal === "lunch") return "昼食は12時台に食べることが多いです。";
+    if (request.meal === "dinner") return "夕食は帰宅後になるので、20時前後になることがあります。";
+  }
+
+  if (request.dimension === "amount") {
     return `${request.label}の量は特に計っていませんが、食べる時は一人分くらいだと思います。`;
   }
 
-  if (key.endsWith(".time")) {
-    if (key.includes("breakfast")) return "朝食は朝の支度をしながら、7時台に食べることが多いです。";
-    if (key.includes("lunch")) return "昼食は仕事の日は12時台に食べることが多いです。";
-    if (key.includes("dinner")) return "夕食は帰宅後になるので、20時前後になることがあります。";
+  return naturalUnknown(p, request.label);
+}
+
+function extractFirstUsefulEvidence(evidence: string): string {
+  const first = evidence
+    .split("\n")
+    .map((x) => x.trim())
+    .find(Boolean);
+  if (!first) return "";
+  const colon = first.indexOf(":");
+  return colon >= 0 ? first.slice(colon + 1).trim() : first;
+}
+
+function genericFallback(
+  scenario: Scenario,
+  request: PersonaDetailRequest,
+  memory: PersonaSessionMemory,
+  state?: ConversationState
+): string {
+  const p = scenario.persona;
+  const evidence = personaEvidenceForDetail(scenario, request);
+  const firstEvidence = extractFirstUsefulEvidence(evidence);
+
+  if (request.domain === "exercise") {
+    if (request.dimension === "frequency" && /週[1-9１-９]/.test(p.exercise)) {
+      return `運動は${p.exercise}というくらいです。`;
+    }
+    if (request.dimension === "items") {
+      if (/なし|少ない|不足|ほとんど/.test(p.exercise)) {
+        return "運動として時間を取ることはあまりなく、普段の移動で歩く程度です。";
+      }
+      return `運動は${p.exercise}という感じです。具体的な種目は日によって違います。`;
+    }
+    if (request.dimension === "barrier") {
+      if (/夜勤|交代|残業|多忙|忙/.test(p.occupation + p.personaLifestyleBackground)) {
+        return "仕事の時間が一定ではないので、決まった時間に運動するのが難しいです。";
+      }
+      return "まとまった時間を作って続けることが難しいです。";
+    }
   }
 
-  return `${request.label}については、普段の生活では決まった一つのパターンではありませんが、今お話ししたような内容になることが多いです。`;
+  if (request.domain === "smoking") {
+    if (request.dimension === "presence") return `たばこは${p.smoking}です。`;
+    if (request.dimension === "history") return `喫煙については、${p.smoking}という状況です。`;
+  }
+
+  if (request.domain === "alcohol") {
+    if (request.dimension === "presence" || request.dimension === "frequency") {
+      return `お酒は${p.alcohol}という状況です。`;
+    }
+  }
+
+  if (request.domain === "sleep") {
+    if (request.dimension === "presence" || request.dimension === "items") {
+      return `睡眠は${p.sleep}という感じです。`;
+    }
+    if (request.dimension === "barrier" && /夜勤|交代|残業|多忙|忙/.test(p.occupation)) {
+      return "仕事の時間によって寝る時間がずれるのが一番難しいところです。";
+    }
+  }
+
+  if (request.domain === "work" && request.dimension === "items") {
+    return `${p.occupation}の仕事をしています。`;
+  }
+
+  if (request.domain === "motivation") {
+    if (request.dimension === "confidence" && state) {
+      if (state.confidence >= 60) {
+        return "全部を変えるのは難しいですが、一つならできそうな気はしています。";
+      }
+      return "やった方がいいとは思いますが、続けられるかにはまだ自信がありません。";
+    }
+    if (request.dimension === "importance" && state) {
+      if (state.importance >= 60) {
+        return "健康のことは大切だと思っています。ただ、今の生活との両立も大事にしたいです。";
+      }
+      return "必要なのは分かりますが、今はほかのことの優先度も高いです。";
+    }
+    if (request.dimension === "barrier") {
+      const constraints = nonEmpty([
+        p.economicConstraint &&
+        !/^(特になし|なし|特に制約なし|制約なし|特段なし)$/.test(
+          p.economicConstraint.trim()
+        )
+          ? p.economicConstraint
+          : undefined,
+        p.occupation ? `${p.occupation}の仕事との両立` : undefined,
+      ]);
+      if (constraints.length) {
+        return `${constraints[0]}があるので、無理なく続けられるかが気になります。`;
+      }
+    }
+  }
+
+  if (firstEvidence) {
+    if (request.dimension === "presence") {
+      return `${request.label}については、${firstEvidence}という状況です。`;
+    }
+    if (
+      request.dimension === "items" ||
+      request.dimension === "history" ||
+      request.dimension === "support" ||
+      request.dimension === "context" ||
+      request.dimension === "detail"
+    ) {
+      return `${request.label}については、${firstEvidence}という感じです。`;
+    }
+  }
+
+  const existing = memory[request.key];
+  return existing ?? naturalUnknown(p, request.label);
 }
 
 export function generatePersonaConsistentFallbackDetail(
   scenario: Scenario,
   request: PersonaDetailRequest,
-  memory: PersonaSessionMemory
+  memory: PersonaSessionMemory,
+  state?: ConversationState
 ): string {
-  if (request.key.startsWith("diet.")) {
+  if (request.domain === "diet") {
     return dietFallback(scenario, request, memory);
   }
-
-  const p = scenario.persona;
-  if (request.key.startsWith("exercise.")) {
-    if (/少ない|なし|不足|ほとんど/.test(p.exercise)) {
-      return "運動として時間を取ることはあまりなく、通勤や買い物で歩く程度です。";
-    }
-    return `普段は${p.exercise}という感じで、できる範囲で体を動かしています。`;
-  }
-
-  if (request.key.startsWith("sleep.")) {
-    return `睡眠は${p.sleep}という感じで、寝る時間や起きる時間は日によって多少変わります。`;
-  }
-
-  if (request.key.startsWith("alcohol.")) {
-    return `お酒は${p.alcohol}という感じです。飲む日は夕食の時が多いです。`;
-  }
-
-  if (request.key.startsWith("work.")) {
-    return `${p.occupation}の仕事をしていて、勤務日は仕事の予定に生活時間が左右されることがあります。`;
-  }
-
-  const existing = memory[request.key];
-  return existing ?? `${request.label}については、普段の生活に合わせてその都度決めています。`;
+  return genericFallback(scenario, request, memory, state);
 }
-
 
 function parseJapaneseDigit(value: string): number | null {
   const normalized = value.replace(/[０-９]/g, (char) =>
@@ -510,21 +899,26 @@ function parseJapaneseDigit(value: string): number | null {
   );
   if (/^\d+$/.test(normalized)) return Number(normalized);
   const map: Record<string, number> = {
-    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7,
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
   };
   return map[value] ?? null;
 }
 
 function extractCurrentVegetableDays(memory: PersonaSessionMemory): number | null {
   const candidates = Object.entries(memory)
-    .filter(([key]) =>
-      key.startsWith("diet.vegetables") || key.includes(".vegetables.")
+    .filter(
+      ([key]) =>
+        key.startsWith("diet.vegetables") || key.includes(".vegetables.")
     )
     .map(([, value]) => value);
 
   for (const text of candidates) {
-    // Negative-day expressions must be interpreted first:
-    // "野菜を食べない日は週2日" means eating vegetables about 5 days/week.
     const negative = text.match(
       /(?:食べない|ほとんど食べない|十分に取れない).{0,12}週(?:に)?([0-7０-７一二三四五六七])日/
     );
@@ -553,11 +947,12 @@ export function checkProposalConsistency(
 
   if (/野菜/.test(t) && /週/.test(t)) {
     const currentDays = extractCurrentVegetableDays(memory);
-    const targetMatch = t.match(/週(?:に)?([0-7一二三四五六七])日/);
+    const targetMatch = t.match(/週(?:に)?([0-7０-７一二三四五六七])日/);
     if (currentDays !== null && targetMatch) {
       const target = parseJapaneseDigit(targetMatch[1]);
       if (target !== null && /食べる日/.test(t) && target < currentDays) {
-        return `今のお話だと、野菜を食べる日は週に${currentDays}日くらいあります。週${target}日にするという意味だと、今より減ることになると思うのですが、週${currentDays + 1 > 7 ? 7 : currentDays + 1}日くらいに増やすという意味でしょうか。`;
+        const suggested = Math.min(7, currentDays + 1);
+        return `今のお話だと、野菜を食べる日は週に${currentDays}日くらいあります。週${target}日にするという意味だと、今より減ることになると思うのですが、週${suggested}日くらいに増やすという意味でしょうか。`;
       }
     }
   }
