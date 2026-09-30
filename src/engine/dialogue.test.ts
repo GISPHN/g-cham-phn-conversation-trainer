@@ -10,6 +10,7 @@ import {
   detectPersonaDetailRequest,
   generatePersonaConsistentFallbackDetail,
   isPersonaDetailAnswerValid,
+  personaEvidenceForDetail,
   type PersonaSessionMemory,
 } from "./personaMemory";
 import {
@@ -287,6 +288,108 @@ describe("dialogue regression", () => {
       previous
     );
     expect(alcohol?.key).toBe("alcohol.pattern.frequency");
+  });
+
+  it("keeps follow-up context across exercise details", () => {
+    const exercise = detectPersonaDetailRequest(
+      "普段はどのような運動をしていますか"
+    );
+    expect(exercise?.key).toBe("exercise.activity.items");
+
+    const duration = detectPersonaDetailRequest(
+      "それは1回何分くらいですか",
+      exercise
+    );
+    expect(duration?.key).toBe("exercise.activity.duration");
+    expect(duration?.domain).toBe("exercise");
+  });
+
+  it("detects detailed smoking, alcohol, and sleep questions", () => {
+    expect(
+      detectPersonaDetailRequest("たばこは1日何本くらい吸いますか")?.key
+    ).toBe("smoking.use.amount");
+    expect(
+      detectPersonaDetailRequest("お酒はどこで飲むことが多いですか")?.key
+    ).toBe("alcohol.pattern.context");
+    expect(
+      detectPersonaDetailRequest("睡眠時間は何時間くらいですか")?.key
+    ).toBe("sleep.pattern.duration");
+  });
+
+  it("detects work, family, finance, and healthcare follow-ups", () => {
+    expect(
+      detectPersonaDetailRequest("仕事は何時ごろ終わりますか")?.key
+    ).toBe("work.pattern.time");
+    expect(
+      detectPersonaDetailRequest("家族に協力してもらえそうですか")?.key
+    ).toBe("family.relationship.support");
+    expect(
+      detectPersonaDetailRequest(
+        "健康づくりで費用面で難しいことはありますか"
+      )?.key
+    ).toBe("finance.constraint.barrier");
+    expect(
+      detectPersonaDetailRequest("病院にはどうやって通っていますか")?.key
+    ).toBe("healthcare.access.items");
+  });
+
+  it("detects checkup, stress, values, and motivation follow-ups", () => {
+    expect(
+      detectPersonaDetailRequest("これまで健診を受けたことはありますか")?.key
+    ).toBe("checkup.result.history");
+    expect(
+      detectPersonaDetailRequest("ストレスになるのはなぜですか")?.key
+    ).toBe("stress.context.reason");
+    expect(
+      detectPersonaDetailRequest("生活で大切にしていることは何ですか")?.key
+    ).toBe("values.priority.items");
+    expect(
+      detectPersonaDetailRequest("続けられる自信はどのくらいありますか")?.key
+    ).toBe("motivation.change.confidence");
+  });
+
+  it("grounds medical and social questions in expanded JMED persona fields", () => {
+    const s = barberScenario();
+    s.persona.pastMedicalHistory = "脂質異常症の指摘歴あり";
+    s.persona.healthcareAccess = "自家用車で通院";
+    s.persona.socialParticipation = "地域活動への参加は少ない";
+
+    const medical = detectPersonaDetailRequest(
+      "これまでに病気を指摘されたことはありますか"
+    )!;
+    const medicalEvidence = personaEvidenceForDetail(s, medical);
+    expect(medicalEvidence).toContain("脂質異常症の指摘歴あり");
+
+    const access = detectPersonaDetailRequest(
+      "病院にはどうやって通っていますか"
+    )!;
+    expect(personaEvidenceForDetail(s, access)).toContain("自家用車で通院");
+
+    const social = detectPersonaDetailRequest(
+      "地域活動には参加していますか"
+    )!;
+    expect(personaEvidenceForDetail(s, social)).toContain(
+      "地域活動への参加は少ない"
+    );
+  });
+
+  it("rejects detail answers that do not answer the requested dimension", () => {
+    const duration = detectPersonaDetailRequest(
+      "運動は1回何分くらいしますか"
+    )!;
+    expect(isPersonaDetailAnswerValid(duration, "ウォーキングをしています。")).toBe(false);
+    expect(isPersonaDetailAnswerValid(duration, "1回30分くらいです。")).toBe(true);
+
+    const reason = detectPersonaDetailRequest(
+      "運動が続かないのはなぜですか"
+    )!;
+    expect(isPersonaDetailAnswerValid(reason, "運動はあまりしていません。")).toBe(false);
+    expect(
+      isPersonaDetailAnswerValid(
+        reason,
+        "仕事が遅くなることが多いので、時間を取りにくいからです。"
+      )
+    ).toBe(true);
   });
 
   it("normalizes record-like sentence endings", () => {
