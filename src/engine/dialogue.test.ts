@@ -79,6 +79,68 @@ describe("dialogue regression", () => {
     expect(reply).not.toBe("はい、お願いします。");
   });
 
+  it("answers a broad diet question from persona diet evidence instead of saying unknown", () => {
+    const s = barberScenario();
+    s.persona.diet =
+      "朝食は家庭で食べることが多い。昼食は外食になる日がある。夕食は家庭で食べることが多い。主食は米飯が中心である。野菜料理は少なめである。";
+
+    const question =
+      "今日は特定健診の話で来ています。まずは食事からお伺いしたいのですが、普段はどのような食生活を送られていますか。";
+    const request = detectPersonaDetailRequest(question);
+    expect(request).not.toBeNull();
+    expect(request?.key).toBe("diet.items");
+
+    const answer = generatePersonaConsistentFallbackDetail(
+      s,
+      request!,
+      {},
+      s.initialState
+    );
+
+    expect(answer).toMatch(/朝食/);
+    expect(answer).toMatch(/昼食/);
+    expect(answer).toMatch(/夕食/);
+    expect(answer).not.toMatch(/分からない|わからない|意識していない/);
+  });
+
+  it("keeps a useful broad diet answer on an anaphoric follow-up", () => {
+    const s = barberScenario();
+    s.persona.diet =
+      "朝食は家庭で食べることが多い。昼食は外食になる日がある。夕食は家庭で食べることが多い。主食は米飯が中心である。野菜料理は少なめである。";
+
+    const first = detectPersonaDetailRequest(
+      "普段はどのような食生活を送られていますか"
+    )!;
+    const firstAnswer = generatePersonaConsistentFallbackDetail(
+      s,
+      first,
+      {},
+      s.initialState
+    );
+
+    const memory: PersonaSessionMemory = {
+      [first.key]: firstAnswer,
+    };
+
+    const followup = detectPersonaDetailRequest(
+      "ではどのようなものを食べているか教えてください",
+      first
+    )!;
+
+    expect(followup.domain).toBe("diet");
+    expect(followup.dimension).toBe("items");
+
+    const secondAnswer = generatePersonaConsistentFallbackDetail(
+      s,
+      followup,
+      memory,
+      s.initialState
+    );
+
+    expect(secondAnswer).toMatch(/朝食|昼食|夕食|米飯|野菜/);
+    expect(secondAnswer).not.toMatch(/分からない|わからない|意識していない/);
+  });
+
   it("recognizes a detailed breakfast question", () => {
     const req = detectPersonaDetailRequest(
       "朝食は具体的にどのようなものを食べていますか？"
