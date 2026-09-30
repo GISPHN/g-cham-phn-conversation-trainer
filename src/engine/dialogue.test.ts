@@ -392,6 +392,112 @@ describe("dialogue regression", () => {
     ).toBe(true);
   });
 
+  it("tracks subtopics across major health guidance lifestyle domains", () => {
+    const walking = detectPersonaDetailRequest(
+      "ウォーキングは普段どのようにしていますか"
+    );
+    expect(walking?.key).toBe("exercise.walking.items");
+
+    const walkingDuration = detectPersonaDetailRequest(
+      "それは1回何分くらいですか",
+      walking
+    );
+    expect(walkingDuration?.key).toBe("exercise.walking.duration");
+
+    expect(
+      detectPersonaDetailRequest("たばこは紙巻きを1日何本くらい吸いますか")?.key
+    ).toBe("smoking.cigarette.amount");
+
+    expect(
+      detectPersonaDetailRequest("寝つきはどうですか")?.key
+    ).toBe("sleep.onset.detail");
+
+    expect(
+      detectPersonaDetailRequest("残業は週に何回くらいありますか")?.key
+    ).toBe("work.overtime.frequency");
+
+    expect(
+      detectPersonaDetailRequest("通院はどのような交通手段ですか")?.key
+    ).toBe("healthcare.transport.items");
+  });
+
+  it("covers motivational interviewing follow-up dimensions", () => {
+    expect(
+      detectPersonaDetailRequest("生活を変えることはどのくらい重要だと思いますか")?.dimension
+    ).toBe("importance");
+    expect(
+      detectPersonaDetailRequest("今どのくらい取り組む準備ができていますか")?.dimension
+    ).toBe("readiness");
+    expect(
+      detectPersonaDetailRequest("変えたらどんな良いことがありそうですか")?.dimension
+    ).toBe("benefit");
+    expect(
+      detectPersonaDetailRequest("逆に変えることで困ることはありますか")?.dimension
+    ).toBe("disadvantage");
+    expect(
+      detectPersonaDetailRequest("続けるにはどんな工夫ができそうですか")?.dimension
+    ).toBe("strategy");
+  });
+
+  it("uses subject-specific checkup evidence instead of unrelated values", () => {
+    const s = barberScenario();
+    s.persona.weight = "78 kg";
+    s.persona.bmi = "26.1";
+    s.persona.vitalSigns = "血圧 142/88 mmHg";
+    s.persona.bloodTests = "HbA1c 6.1%、LDL 155 mg/dL";
+
+    const bp = detectPersonaDetailRequest("血圧はどのくらいでしたか")!;
+    expect(bp.key).toBe("checkup.blood_pressure.amount");
+    const bpEvidence = personaEvidenceForDetail(s, bp);
+    expect(bpEvidence).toContain("142/88");
+    expect(bpEvidence).not.toContain("26.1");
+    expect(bpEvidence).not.toContain("HbA1c");
+
+    const hba1c = detectPersonaDetailRequest("HbA1cはどのくらいでしたか")!;
+    expect(hba1c.key).toBe("checkup.hba1c.amount");
+    const hba1cEvidence = personaEvidenceForDetail(s, hba1c);
+    expect(hba1cEvidence).toContain("HbA1c 6.1");
+    expect(hba1cEvidence).not.toContain("142/88");
+  });
+
+  it("does not fabricate fact-locked medical details when persona evidence is absent", () => {
+    const s = barberScenario();
+    s.persona.medications = "";
+    s.persona.medicationAdherence = "";
+    const medication = detectPersonaDetailRequest(
+      "薬は何を何回飲んでいますか"
+    )!;
+    const reply = generatePersonaConsistentFallbackDetail(
+      s,
+      medication,
+      {},
+      s.initialState
+    );
+    expect(reply).toMatch(/分から|わから|意識していない|答えにく/);
+    expect(reply).not.toMatch(/mg|錠|1日[0-9１-９]/);
+  });
+
+  it("keeps a generated lifestyle detail stable within the same persona session", () => {
+    const s = barberScenario();
+    const request = detectPersonaDetailRequest(
+      "ウォーキングは1回何分くらいですか"
+    )!;
+    const first = generatePersonaConsistentFallbackDetail(
+      s,
+      request,
+      {},
+      s.initialState
+    );
+    const memory: PersonaSessionMemory = { [request.key]: first };
+    const second = generatePersonaConsistentFallbackDetail(
+      s,
+      request,
+      memory,
+      s.initialState
+    );
+    expect(second).toBe(first);
+  });
+
   it("normalizes record-like sentence endings", () => {
     expect(
       normalizeClientSpeech("朝食は家庭で食べることが多い")
