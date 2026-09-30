@@ -767,8 +767,9 @@ export function isPersonaDetailAnswerValid(
     case "intensity":
       return /軽い|中くらい|きつい|息|汗|ゆっくり|速め|強度|ペース/.test(text);
     case "reason":
-    case "trigger":
       return /から|ので|ため|きっかけ|理由|思って|気になって/.test(text);
+    case "trigger":
+      return /時|場面|きっかけ|区切り|とき|時に|なると/.test(text);
     case "barrier":
       return /難|忙|時間|費用|仕事|続|負担|疲|面倒|自信|家族|環境/.test(text);
     case "support":
@@ -788,7 +789,7 @@ export function isPersonaDetailAnswerValid(
     case "understanding":
       return /分か|わか|理解|気にな|驚|思って|受け止め/.test(text);
     case "strategy":
-      return /なら|工夫|時間|決め|準備|置く|選ぶ|一緒|少しずつ|やり方/.test(text);
+      return /なら|工夫|時間|決め|準備|置く|選ぶ|一緒|少しずつ|やり方|気分を切り替|休める|短く|好きなこと/.test(text);
     case "history":
       return /以前|前は|これまで|過去|昔|ことがある|受けた|試した|続いた|やめた/.test(
         text
@@ -1121,6 +1122,16 @@ function softDomainFallback(
       "1日10本くらいです。",
       "1日15本くらいです。",
       "1日5〜10本くらいです。",
+    ]);
+  }
+
+  if (request.domain === "smoking" && request.dimension === "history") {
+    if (/禁煙|過去喫煙|以前/.test(p.smoking)) {
+      return `喫煙については、${p.smoking}という経過です。`;
+    }
+    return pickStable(seed, [
+      "以前に一度、しばらく禁煙したことはありますが、また吸うようになりました。",
+      "これまでに禁煙を試したことはありますが、長くは続きませんでした。",
     ]);
   }
 
