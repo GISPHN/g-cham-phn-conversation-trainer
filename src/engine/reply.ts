@@ -345,6 +345,20 @@ function isCheckupConversationOpening(text: string): boolean {
   );
 }
 
+function hasSubstantiveQuestionAfterOpening(text: string): boolean {
+  const t = compact(text);
+  const hasTopic =
+    /食事|食生活|朝食|昼食|夕食|間食|野菜|果物|外食|運動|歩行|身体活動|睡眠|飲酒|お酒|喫煙|たばこ|仕事|勤務|家族|同居|独居|通院|受診|服薬|薬|体重|腹囲|BMI|血圧|血糖|HbA1c|LDL|中性脂肪/.test(
+      t
+    );
+  const asksForContent =
+    /どのよう|どんな|何を|何が|どれくらい|どのくらい|何回|何日|何分|何時間|何時|具体的|教えて|聞かせて|伺いたい|聞きたい|していますか|食べていますか|飲みますか|吸いますか|ありますか|どうですか|どうでしたか/.test(
+      t
+    );
+
+  return hasTopic && asksForContent;
+}
+
 function checkupOpeningReply(
   s: Scenario,
   st: ConversationState,
@@ -482,8 +496,12 @@ function topicReply(
 
   if (intent === "greeting") return "こんにちは。よろしくお願いします。";
 
-  // Conversational act takes priority over topical lookup.
-  if (isCheckupConversationOpening(text)) {
+  // A pure checkup introduction gets an acknowledgement. If the same utterance
+  // also asks a substantive lifestyle or health question, answer that question.
+  if (
+    isCheckupConversationOpening(text) &&
+    !hasSubstantiveQuestionAfterOpening(text)
+  ) {
     return checkupOpeningReply(s, st, messages);
   }
 
