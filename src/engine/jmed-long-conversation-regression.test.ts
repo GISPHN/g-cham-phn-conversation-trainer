@@ -492,7 +492,10 @@ describe("long conversation regression with fixed JMED-Personas synthetic record
       expect(profile.persona.sourceId).toMatch(/^[0-9a-f]{32}$/);
 
       const lunchRequest = requests.find(
-        (r) => r.key === "diet.lunch.general.items"
+        (r) =>
+          r.domain === "diet" &&
+          r.meal === "lunch" &&
+          r.dimension === "items"
       );
       expect(lunchRequest).toBeDefined();
       const firstLunch = memory[lunchRequest!.key];
