@@ -62,6 +62,19 @@ describe("local AI WebGPU diagnostics", () => {
     ).toBe("shader_f16_unavailable");
   });
 
+  it("includes the selected GPU adapter mode in diagnostics", () => {
+    const text = formatWebGPUDiagnostics({
+      webgpuAvailable: true,
+      adapterAvailable: true,
+      shaderF16: true,
+      adapterMode: "default",
+      selectedModelId: PRIMARY_LOCAL_MODEL_ID,
+      fallbackUsed: false,
+    });
+    expect(text).toContain("GPU選択: default");
+    expect(text).toContain("shader-f16: 対応");
+  });
+
   it("formats the selected fallback model in diagnostics", () => {
     const text = formatWebGPUDiagnostics({
       webgpuAvailable: true,
