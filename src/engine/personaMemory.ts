@@ -111,6 +111,13 @@ function correctionFocus(text: string): string {
 function detailDimension(text: string): PersonaDetailDimension {
   const t = compact(text);
 
+  if (/困ること|デメリット|変えると.*困|変えることで.*困|嫌なこと/.test(t)) {
+    return "disadvantage";
+  }
+  if (/良いこと|メリット|変えたら.*良|改善したら.*良/.test(t)) {
+    return "benefit";
+  }
+
   if (
     /難しい理由|難しいこと|難しい点|難しい|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく/.test(
       t
