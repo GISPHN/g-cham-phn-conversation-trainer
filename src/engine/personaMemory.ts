@@ -1,4 +1,10 @@
 import { ConversationState, Persona, Scenario } from "../domain/types";
+import {
+  buildDomainDetailKey,
+  detectDetailSubject,
+  factLockedDomains,
+  syntheticDetailDomains,
+} from "./detailSchema";
 
 export type PersonaSessionMemory = Record<string, string>;
 
@@ -21,6 +27,11 @@ export type PersonaDetailDimension =
   | "confidence"
   | "importance"
   | "goal"
+  | "readiness"
+  | "benefit"
+  | "disadvantage"
+  | "understanding"
+  | "strategy"
   | "detail";
 
 export type PersonaDetailDomain =
@@ -115,6 +126,11 @@ function detailDimension(text: string): PersonaDetailDimension {
   ) {
     return "importance";
   }
+  if (/理解|分かりましたか|わかりましたか|どう受け止め|結果.*どう思/.test(t)) return "understanding";
+  if (/準備|今すぐ|いつから|始める気|取り組む気|変える気/.test(t)) return "readiness";
+  if (/良いこと|メリット|変えたら.*良|改善したら.*良/.test(t)) return "benefit";
+  if (/困ること|デメリット|変えると.*困|嫌なこと/.test(t)) return "disadvantage";
+  if (/どうすれば|どうしたら|工夫|方法.*続|やり方.*続/.test(t)) return "strategy";
   if (/目標|どうしたい|変えたい|取り組みたい|やってみたい/.test(t)) return "goal";
   if (/きっかけ|始めた理由|吸う理由|飲む理由/.test(t)) return "trigger";
   if (/なぜ|どうして|理由|何があって|どういうわけ/.test(t)) return "reason";
@@ -416,11 +432,18 @@ export function detectPersonaDetailRequest(
 
     if (!explicitDetail) return null;
 
+    const subject = detectDetailSubject(explicitTopic.domain, focus);
+
     return {
-      key: `${explicitTopic.baseKey}.${dimension}`,
-      label: explicitTopic.label,
+      key: buildDomainDetailKey(
+        explicitTopic.domain,
+        explicitTopic.baseKey,
+        subject,
+        dimension
+      ),
+      label: subject?.label ?? explicitTopic.label,
       domain: explicitTopic.domain,
-      subject: explicitTopic.baseKey.split(".")[1],
+      subject: subject?.key ?? explicitTopic.baseKey.split(".")[1],
       dimension,
       isCorrection,
       queryText: text,
@@ -619,6 +642,16 @@ export function isPersonaDetailAnswerValid(
       return /大切|重要|気になる|優先|必要/.test(text);
     case "goal":
       return /目標|したい|やってみ|変え|増や|減ら|続け/.test(text);
+    case "readiness":
+      return /今は|まだ|そろそろ|始め|取り組|やってみ|準備|気持ち/.test(text);
+    case "benefit":
+      return /良|楽|安心|改善|減ら|増や|できる|メリット/.test(text);
+    case "disadvantage":
+      return /困|嫌|面倒|負担|時間|我慢|楽しみ|付き合い|デメリット/.test(text);
+    case "understanding":
+      return /分か|わか|理解|気にな|驚|思って|受け止め/.test(text);
+    case "strategy":
+      return /なら|工夫|時間|決め|準備|置く|選ぶ|一緒|少しずつ|やり方/.test(text);
     case "history":
       return /以前|前は|これまで|過去|昔|ことがある|受けた|試した|続いた|やめた/.test(
         text
@@ -787,6 +820,169 @@ function extractFirstUsefulEvidence(evidence: string): string {
   return colon >= 0 ? first.slice(colon + 1).trim() : first;
 }
 
+function evidenceContainsUsefulFact(
+  evidence: string,
+  request: PersonaDetailRequest
+): boolean {
+  const compacted = compact(evidence);
+  if (!compacted) return false;
+
+  if (request.dimension === "amount") {
+    return /[0-9０-９一二三四五六七八九十]+(?:本|杯|合|皿|個|g|グラム|ml|mL|kg|キロ)/.test(compacted);
+  }
+  if (request.dimension === "frequency") {
+    return /週|月|年|毎日|日|回|時々|たまに|ほぼ毎日/.test(compacted);
+  }
+  if (request.dimension === "duration") {
+    return /[0-9０-９一二三四五六七八九十]+(?:分|時間|年|か月|ヶ月)/.test(compacted);
+  }
+  if (request.dimension === "time") {
+    return /[0-9０-９一二三四五六七八九十]+時|朝|昼|夕方|夜|就寝|起床/.test(compacted);
+  }
+  return true;
+}
+
+function motivationFallback(
+  scenario: Scenario,
+  request: PersonaDetailRequest,
+  state?: ConversationState
+): string | null {
+  const p = scenario.persona;
+
+  if (request.dimension === "confidence" && state) {
+    if (state.confidence >= 70) {
+      return "全部を一度に変えるのは難しいですが、一つに絞ればできそうな気はしています。";
+    }
+    if (state.confidence >= 40) {
+      return "できることもあると思いますが、続けられるかは少し不安です。";
+    }
+    return "必要なのは分かりますが、今の生活で続けられる自信はあまりありません。";
+  }
+
+  if (request.dimension === "importance" && state) {
+    if (state.importance >= 70) {
+      return "健康のことはかなり大切だと思っています。ただ、生活を無理に崩したくはないです。";
+    }
+    if (state.importance >= 40) {
+      return "大事だとは思っていますが、仕事や生活の中では後回しになることがあります。";
+    }
+    return "必要なのは分かりますが、今はそこまで優先度が高いとは感じていません。";
+  }
+
+  if (request.dimension === "readiness" && state) {
+    if (state.readiness >= 70) return "何か一つなら、そろそろ始めてもいいかなと思っています。";
+    if (state.readiness >= 40) return "少し考えてはいますが、今すぐ決めるところまではいっていません。";
+    return "今のところ、すぐに生活を変えようという気持ちにはなっていません。";
+  }
+
+  if (request.dimension === "benefit") {
+    return "無理なく続けられて体調が少しでも良くなるなら、それはいいと思います。";
+  }
+
+  if (request.dimension === "disadvantage") {
+    const text = [p.occupation, p.values, p.personaLifestyleBackground].join(" ");
+    if (/忙|残業|夜勤|交代/.test(text)) {
+      return "時間を決めてやることになると、仕事の都合で続けにくいのが困ります。";
+    }
+    return "今の生活の楽しみまで我慢する形になると、続けにくいと思います。";
+  }
+
+  if (request.dimension === "strategy") {
+    if (/忙|残業|夜勤|交代/.test(p.occupation + p.personaLifestyleBackground)) {
+      return "時間を固定するより、できる日に短くやる形なら続けやすい気がします。";
+    }
+    return "一度に大きく変えるより、今の生活の中で一つだけ変える方が続けやすそうです。";
+  }
+
+  if (request.dimension === "goal" && state) {
+    if (state.decisionStatus === "self_selected_goal") {
+      return "自分で決めたことなら、まずはそれを続けてみたいです。";
+    }
+    if (state.readiness >= 55) {
+      return "今の生活で無理のないことを一つ決めて、まず試してみたいです。";
+    }
+    return "まだ具体的な目標を決めるより、何ならできそうか考えたいです。";
+  }
+
+  return null;
+}
+
+function softDomainFallback(
+  scenario: Scenario,
+  request: PersonaDetailRequest,
+  state?: ConversationState
+): string | null {
+  const p = scenario.persona;
+  const seed = `${p.id}:${request.key}`;
+  const workBusy = /忙|残業|夜勤|交代|不規則/.test(
+    [p.occupation, p.personaLifestyleBackground].join(" ")
+  );
+
+  if (request.domain === "motivation") {
+    return motivationFallback(scenario, request, state);
+  }
+
+  if (request.dimension === "barrier") {
+    if (workBusy) return "仕事の時間が読みにくいので、決まった形で続けるのが難しいです。";
+    if (p.economicConstraint && !/なし|特になし|制約なし/.test(p.economicConstraint)) {
+      return "費用がかかることだと、毎日のこととして続けるのは少し難しいです。";
+    }
+    return "最初はできても、毎日の生活の中で続けることが一番難しいと思います。";
+  }
+
+  if (request.dimension === "support") {
+    if (/独居|一人暮らし/.test(p.household + p.familyRelationship)) {
+      return "普段は自分で決めることが多くて、毎日のことを手伝ってもらう人は特にいません。";
+    }
+    if (p.familyRelationship) {
+      return `家族については、${p.familyRelationship}という状況です。頼めることなら相談はできると思います。`;
+    }
+  }
+
+  if (request.domain === "stress" && request.dimension === "strategy") {
+    return pickStable(seed, [
+      "少し一人で過ごしたり、好きなことをして気分を切り替えることが多いです。",
+      "休める時に休んだり、家では仕事のことを考えないようにすることがあります。",
+    ]);
+  }
+
+  if (request.domain === "exercise" && request.dimension === "duration") {
+    if (/ほとんど|なし|不足|少ない/.test(p.exercise)) {
+      return "運動としてまとまってする時間はほとんどありません。歩くとしても移動の時くらいです。";
+    }
+    return pickStable(seed, [
+      "1回にすると20〜30分くらいのことが多いです。",
+      "長くても30分くらいで、短い日は10〜20分くらいです。",
+    ]);
+  }
+
+  if (request.domain === "exercise" && request.dimension === "time") {
+    if (workBusy) return "仕事の日は時間が一定ではないので、できるとしたら帰宅後か休日です。";
+    return "平日は夕方か帰宅後、休日は日中にすることが多いです。";
+  }
+
+  if (request.domain === "sleep" && request.dimension === "time") {
+    if (request.subject === "bedtime") {
+      return workBusy ? "仕事の日は遅くなることがあって、寝るのは23時から0時頃が多いです。" : "寝るのは23時頃が多いです。";
+    }
+    if (request.subject === "wakeup") return "起きるのは6時台が多いです。";
+  }
+
+  if (request.domain === "alcohol" && request.dimension === "context") {
+    return /なし|飲まない/.test(p.alcohol)
+      ? "普段はお酒を飲む場面はほとんどありません。"
+      : "飲むとしたら、夕食の時か人と食事をする時が多いです。";
+  }
+
+  if (request.domain === "smoking" && request.dimension === "trigger") {
+    return /吸わない|非喫煙|なし/.test(p.smoking)
+      ? "今はたばこを吸わないので、吸いたくなる場面は特にありません。"
+      : "仕事の区切りや、少し気分を切り替えたい時に吸いたくなることがあります。";
+  }
+
+  return null;
+}
+
 function genericFallback(
   scenario: Scenario,
   request: PersonaDetailRequest,
@@ -796,6 +992,19 @@ function genericFallback(
   const p = scenario.persona;
   const evidence = personaEvidenceForDetail(scenario, request);
   const firstEvidence = extractFirstUsefulEvidence(evidence);
+  const existing = memory[request.key];
+  if (existing) return existing;
+
+  if (factLockedDomains.has(request.domain)) {
+    if (!firstEvidence || !evidenceContainsUsefulFact(evidence, request)) {
+      return naturalUnknown(p, request.label);
+    }
+  }
+
+  const soft = syntheticDetailDomains.has(request.domain)
+    ? softDomainFallback(scenario, request, state)
+    : null;
+  if (soft) return soft;
 
   if (request.domain === "exercise") {
     if (request.dimension === "frequency" && /週[1-9１-９]/.test(p.exercise)) {
@@ -883,8 +1092,7 @@ function genericFallback(
     }
   }
 
-  const existing = memory[request.key];
-  return existing ?? naturalUnknown(p, request.label);
+  return naturalUnknown(p, request.label);
 }
 
 export function generatePersonaConsistentFallbackDetail(
