@@ -80,7 +80,7 @@ const detectionCases: DetectionCase[] = [
   { q: "紙巻きたばこは1日何本くらいですか", domain: "smoking", dimension: "amount", subject: "cigarette" },
   { q: "加熱式たばこも吸いますか", domain: "smoking", dimension: "presence", subject: "heated_tobacco" },
   { q: "これまで禁煙したことはありますか", domain: "smoking", dimension: "history", subject: "quit_attempt" },
-  { q: "たばこを吸いたくなるのはどんな時ですか", domain: "smoking", dimension: "time", subject: "craving" },
+  { q: "たばこを吸いたくなるのはどんな時ですか", domain: "smoking", dimension: "trigger", subject: "craving" },
   { q: "ビールは1回に何本くらい飲みますか", domain: "alcohol", dimension: "amount", subject: "beer" },
   { q: "ワインは週に何回くらい飲みますか", domain: "alcohol", dimension: "frequency", subject: "wine" },
   { q: "飲み会では誰と飲むことが多いですか", domain: "alcohol", dimension: "context", subject: "social_drinking" },
