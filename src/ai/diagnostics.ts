@@ -11,11 +11,18 @@ export type LocalAIErrorCode =
   | "model_download"
   | "initialization_failed";
 
+export type WebGPUAdapterMode =
+  | "high-performance"
+  | "default"
+  | "low-power"
+  | "none";
+
 export type WebGPUDiagnostics = {
   webgpuAvailable: boolean;
   adapterAvailable: boolean;
   shaderF16: boolean;
   adapterLabel?: string;
+  adapterMode?: WebGPUAdapterMode;
   selectedModelId?: string;
   fallbackUsed?: boolean;
 };
@@ -108,8 +115,11 @@ export function formatWebGPUDiagnostics(
 
   const parts = [
     "WebGPU: 対応",
+    diagnostics.adapterMode && diagnostics.adapterMode !== "none"
+      ? `GPU選択: ${diagnostics.adapterMode}`
+      : "",
     `shader-f16: ${diagnostics.shaderF16 ? "対応" : "非対応"}`,
-  ];
+  ].filter(Boolean);
   if (diagnostics.adapterLabel) {
     parts.push(`GPU: ${diagnostics.adapterLabel}`);
   }
