@@ -766,6 +766,9 @@ export function isPersonaDetailAnswerValid(
 
   switch (request.dimension) {
     case "amount":
+      if (request.subject === "bmi") {
+        return /[0-9０-９]+(?:\.[0-9０-９]+)?/.test(text);
+      }
       return /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|本|g|グラム|ml|mL|合|割|品|人分|mmHg|kg(?:\/m2|\/m²)?|cm|%|mg\/dL|mmol\/L|U\/L)|[0-9０-９]+\/[0-9０-９]+|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
         text
       );
@@ -798,7 +801,7 @@ export function isPersonaDetailAnswerValid(
     case "goal":
       return /目標|したい|やってみ|変え|増や|減ら|続け/.test(text);
     case "readiness":
-      return /今は|まだ|そろそろ|始め|取り組|やってみ|準備|気持ち/.test(text);
+      return /今は|今すぐ|まだ|そろそろ|始め|取り組|やってみ|準備|気持ち|考えて/.test(text);
     case "benefit":
       return /良|楽|安心|改善|減ら|増や|できる|メリット/.test(text);
     case "disadvantage":
@@ -806,7 +809,7 @@ export function isPersonaDetailAnswerValid(
     case "understanding":
       return /分か|わか|理解|気にな|驚|思って|受け止め/.test(text);
     case "strategy":
-      return /なら|工夫|時間|決め|準備|置く|選ぶ|一緒|少しずつ|やり方|気分を切り替|休める|短く|好きなこと/.test(text);
+      return /なら|工夫|時間|決め|準備|置く|選ぶ|一緒|少しずつ|やり方|気分を切り替|休める|短く|好きなこと|続けやす|一つだけ|変える方/.test(text);
     case "history":
       return /以前|前は|これまで|過去|昔|ことがある|受けた|試した|続いた|やめた/.test(
         text
@@ -818,7 +821,7 @@ export function isPersonaDetailAnswerValid(
     case "change":
       return /変わ|増え|減っ|以前|前より|最近/.test(text);
     case "presence":
-      return /はい|いいえ|してい|しています|してません|ありません|あります|ある|ない|なし|いる|いない|食べ|飲み|吸い|通い|受け|使っ/.test(
+      return /はい|いいえ|してい|しています|してません|ありません|あります|ある|ない|なし|いる|いない|食べ|飲み|吸い|喫煙|非喫煙|通い|受け|使っ/.test(
         text
       );
     case "items":
