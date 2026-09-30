@@ -101,14 +101,20 @@ function detailDimension(text: string): PersonaDetailDimension {
   const t = compact(text);
 
   if (
-    /難しい理由|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく/.test(
+    /難しい理由|難しいこと|難しい点|難しい|できない理由|続かない理由|妨げ|障壁|ネック|困って|困る|難しさ|負担にな|できない|続けにく/.test(
       t
     )
   ) {
     return "barrier";
   }
   if (/自信|できそう|できると思|続けられそう/.test(t)) return "confidence";
-  if (/大切|重要|優先したい|どのくらい重要/.test(t)) return "importance";
+  if (
+    /どのくらい.*(?:大切|重要)|どれくらい.*(?:大切|重要)|(?:大切|重要).*(?:程度|思いますか|感じますか)|優先度|重要度/.test(
+      t
+    )
+  ) {
+    return "importance";
+  }
   if (/目標|どうしたい|変えたい|取り組みたい|やってみたい/.test(t)) return "goal";
   if (/きっかけ|始めた理由|吸う理由|飲む理由/.test(t)) return "trigger";
   if (/なぜ|どうして|理由|何があって|どういうわけ/.test(t)) return "reason";
