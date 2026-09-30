@@ -168,7 +168,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   if (/以前|過去|これまで|前にも|昔|やめたこと|試したこと|受けたこと|続いたこと/.test(t)) {
     return "history";
   }
-  if (/誰か|家族.*支|支えて|手伝って|協力|相談できる|サポート|頼れる/.test(t)) {
+  if (/誰か|家族.*支|支えて|手伝って|協力|相談でき|相談相手|サポート|頼れ/.test(t)) {
     return "support";
   }
   if (/どこで|場所|職場で|家で|自宅で|外で|一人で|誰と/.test(t)) {
@@ -305,7 +305,7 @@ const topicDefinitions: TopicDefinition[] = [
     domain: "family",
     baseKey: "family.relationship",
     label: "家族・同居状況",
-    patterns: [/家族|同居|独居|一人暮らし|暮らし|暮らして|配偶者|夫婦|夫(?:と|が|は|に|の|を|へ|です|、|。|$)|妻|子ども|子供|親|介護|誰に.*相談|相談できる人|相談相手/],
+    patterns: [/家族|同居|独居|一人暮らし|暮らし|暮らして|配偶者|夫婦|(?<!工)夫(?:と|が|は|に|の|を|へ|です|、|。|$)|妻|子ども|子供|親|介護|誰に.*相談|相談できる人|相談相手/],
   },
   {
     domain: "social",
@@ -459,6 +459,23 @@ export function detectPersonaDetailRequest(
   }
 
   const explicitTopic = priorityTopic ?? detectExplicitTopic(focus);
+
+  if (
+    !explicitTopic &&
+    previous &&
+    isAnaphoricFollowup(focus, dimension) &&
+    dimension !== "detail"
+  ) {
+    const previousBase = previous.key.split(".").slice(0, -1).join(".");
+    return {
+      ...previous,
+      key: `${previousBase}.${dimension}`,
+      dimension,
+      isCorrection,
+      queryText: text,
+    };
+  }
+
   const motivationDimensions: PersonaDetailDimension[] = [
     "confidence",
     "importance",
@@ -1146,6 +1163,15 @@ function softDomainFallback(
     return workBusy
       ? "普段は19時頃に終わりますが、残業の日は20時を過ぎることがあります。"
       : "普段は18時頃に仕事が終わります。";
+  }
+
+  if (request.domain === "work" && request.dimension === "frequency") {
+    if (request.subject === "overtime") {
+      return workBusy ? "残業は週に2〜3回くらいあります。" : "残業は週に1回あるかないかくらいです。";
+    }
+    if (request.subject === "shift") {
+      return /夜勤|交代|シフト/.test(p.occupation) ? "週に2〜3回くらいです。" : "交代勤務はありません。";
+    }
   }
 
   if (request.domain === "sleep" && request.dimension === "time") {
