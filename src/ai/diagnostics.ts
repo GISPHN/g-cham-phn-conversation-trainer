@@ -41,7 +41,7 @@ export function classifyLocalAIInitFailure(error: unknown): {
   const text = raw.toLowerCase();
 
   if (
-    /webgpu.*(?:not|unavailable|unsupported)|navigator\.gpu|webgpu_unavailable/.test(
+    /webgpu.*(?:not|unavailable|unsupported)|navigator\.gpu|webgpu_unavailable|local_ai_init_failed\[webgpu_unavailable\]/.test(
       text
     )
   ) {
@@ -52,7 +52,7 @@ export function classifyLocalAIInitFailure(error: unknown): {
     };
   }
 
-  if (/adapter.*(?:not found|unavailable|null)|adapter_unavailable/.test(text)) {
+  if (/adapter.*(?:not found|unavailable|null)|adapter_unavailable|local_ai_init_failed\[adapter_unavailable\]/.test(text)) {
     return {
       code: "adapter_unavailable",
       message:
@@ -60,7 +60,7 @@ export function classifyLocalAIInitFailure(error: unknown): {
     };
   }
 
-  if (/shader[-_ ]?f16|required feature.*f16|f16.*(?:unsupported|not supported)/.test(text)) {
+  if (/shader[-_ ]?f16|required feature.*f16|f16.*(?:unsupported|not supported)|local_ai_init_failed\[shader_f16_unavailable\]/.test(text)) {
     return {
       code: "shader_f16_unavailable",
       message:
@@ -69,7 +69,7 @@ export function classifyLocalAIInitFailure(error: unknown): {
   }
 
   if (
-    /out of memory|oom|device lost|device.*lost|gpu.*lost|allocation|allocate|insufficient.*memory|buffer.*(?:too large|size)|memory.*(?:limit|exceed)/.test(
+    /out of memory|oom|device lost|device.*lost|gpu.*lost|allocation|allocate|insufficient.*memory|buffer.*(?:too large|size)|memory.*(?:limit|exceed)|local_ai_init_failed\[gpu_memory_or_device\]/.test(
       text
     )
   ) {
@@ -81,7 +81,7 @@ export function classifyLocalAIInitFailure(error: unknown): {
   }
 
   if (
-    /failed to fetch|networkerror|network error|http\s*(?:4|5)\d\d|fetch.*failed|download|huggingface|cdn/.test(
+    /failed to fetch|networkerror|network error|http\s*(?:4|5)\d\d|fetch.*failed|download|huggingface|cdn|local_ai_init_failed\[model_download\]/.test(
       text
     )
   ) {
