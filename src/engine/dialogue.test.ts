@@ -54,6 +54,31 @@ describe("dialogue regression", () => {
     expect(reply).not.toMatch(/過去2年|健診は/);
   });
 
+  it("answers a substantive diet question even when it is preceded by a checkup introduction", () => {
+    const s = barberScenario();
+    const text =
+      "今日は特定健診の結果で気になるところを先にお話をさせていただきたいと思います。まず食事について伺いたいと思いますが、普段はどのような食事をとられていますか。";
+    const a = analyzeTurn(text);
+    expect(a.checkupOpening).toBe(true);
+
+    const detail = detectPersonaDetailRequest(text);
+    expect(detail).not.toBeNull();
+    expect(detail?.domain).toBe("diet");
+    expect(detail?.dimension).toBe("items");
+
+    const reply = generateRuleBasedReply(
+      s,
+      s.initialState,
+      a,
+      2,
+      text,
+      []
+    );
+    expect(reply).toMatch(/朝食|昼食|夕食|外食|家庭/);
+    expect(reply).not.toBe("わかりました。お願いします。");
+    expect(reply).not.toBe("はい、お願いします。");
+  });
+
   it("recognizes a detailed breakfast question", () => {
     const req = detectPersonaDetailRequest(
       "朝食は具体的にどのようなものを食べていますか？"
