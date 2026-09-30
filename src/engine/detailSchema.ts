@@ -23,7 +23,7 @@ export const detailSubjectRules: DetailSubjectRule[] = [
   { domain: "smoking", key: "craving", label: "喫煙欲求", patterns: [/吸いたく|吸いたい|欲しく|我慢/] },
 
   { domain: "alcohol", key: "beer", label: "ビール", patterns: [/ビール/] },
-  { domain: "alcohol", key: "wine", label: "ワイン/", patterns: [/ワイン/] },
+  { domain: "alcohol", key: "wine", label: "ワイン", patterns: [/ワイン/] },
   { domain: "alcohol", key: "sake", label: "日本酒", patterns: [/日本酒/] },
   { domain: "alcohol", key: "shochu", label: "焼酎", patterns: [/焼酎/] },
   { domain: "alcohol", key: "highball", label: "ハイボール・蒸留酒", patterns: [/ハイボール|ウイスキー/] },
