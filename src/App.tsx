@@ -656,7 +656,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.7.0</span>
+        <span className="badge">MVP 0.7.1</span>
       </header>
 
       <section className="panel trainingSelector">
