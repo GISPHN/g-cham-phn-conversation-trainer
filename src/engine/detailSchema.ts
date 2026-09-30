@@ -80,7 +80,7 @@ export const detailSubjectRules: DetailSubjectRule[] = [
   { domain: "stress", key: "family", label: "家庭のストレス", patterns: [/家族.*ストレス|家庭.*ストレス/] },
   { domain: "stress", key: "coping", label: "ストレス対処", patterns: [/ストレス.*解消|気分転換|対処.*ストレス/] },
 
-  { domain: "motivation", key: "importance", label: "行動変容の重要度", patterns: [/重要度|どれくらい.*大切|どのくらい.*大切/] },
+  { domain: "motivation", key: "importance", label: "行動変容の重要度", patterns: [/重要度|どれくらい.*大切|どのくらい.*大切|どれくらい.*重要|どのくらい.*重要|重要だと思/] },
   { domain: "motivation", key: "confidence", label: "行動変容への自信", patterns: [/自信|できそう|続けられそう/] },
   { domain: "motivation", key: "readiness", label: "行動変容の準備性", patterns: [/準備|今すぐ|いつから|始める気|取り組む気/] },
   { domain: "motivation", key: "barrier", label: "行動変容の障壁", patterns: [/難しい理由|難しい点|障壁|ネック|続かない理由/] },
