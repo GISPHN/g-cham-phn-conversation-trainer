@@ -3,15 +3,36 @@ import path from "node:path";
 
 const DATASET = "sociocom/JMED-Personas";
 const BASE = "https://datasets-server.huggingface.co";
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
-async function json(url) {
-  const response = await fetch(url, {
-    headers: { "User-Agent": "g-cham-phn-conversation-trainer/0.4.1" },
-  });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}: ${url}`);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function json(url, attempts = 4) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "g-cham-phn-conversation-trainer/0.7.0" },
+      });
+      if (response.ok) return response.json();
+
+      const error = new Error(`${response.status} ${response.statusText}: ${url}`);
+      if (!RETRYABLE_STATUS.has(response.status) || attempt === attempts) {
+        throw error;
+      }
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+    }
+
+    const delayMs = 500 * 2 ** (attempt - 1);
+    console.warn(
+      `JMED fetch attempt ${attempt}/${attempts} failed; retrying in ${delayMs} ms: ${url}`
+    );
+    await sleep(delayMs);
   }
-  return response.json();
+  throw lastError;
 }
 
 function pick(row) {
@@ -30,7 +51,7 @@ function pick(row) {
 
 async function main() {
   const dataset = encodeURIComponent(DATASET);
-  const splits = await json(`${BASE}/splits?dataset=${dataset}`);
+  const splits = await json(`${BASE}/splits?dataset=${dataset}`, 5);
   const first = splits.splits?.find((s) => s.split === "train") ?? splits.splits?.[0];
   if (!first) throw new Error("No JMED dataset split found");
 
@@ -38,6 +59,7 @@ async function main() {
   const split = first.split;
   const offsets = [0, 10000, 25000, 40000, 55000, 70000, 85000, 99000];
   const records = [];
+  const failedOffsets = [];
 
   for (const offset of offsets) {
     const params = new URLSearchParams({
@@ -47,9 +69,16 @@ async function main() {
       offset: String(offset),
       length: "100",
     });
-    const data = await json(`${BASE}/rows?${params}`);
-    for (const item of data.rows ?? []) {
-      if (item?.row) records.push(pick(item.row));
+    try {
+      const data = await json(`${BASE}/rows?${params}`, 4);
+      for (const item of data.rows ?? []) {
+        if (item?.row) records.push(pick(item.row));
+      }
+    } catch (error) {
+      failedOffsets.push(offset);
+      console.warn(
+        `Skipping JMED sample offset ${offset} after retries: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -59,7 +88,9 @@ async function main() {
   });
 
   if (eligible.length < 50) {
-    throw new Error(`Too few eligible JMED personas: ${eligible.length}`);
+    throw new Error(
+      `Too few eligible JMED personas after retries: ${eligible.length}; failed offsets: ${failedOffsets.join(", ") || "none"}`
+    );
   }
 
   const outDir = path.resolve("public");
@@ -72,11 +103,17 @@ async function main() {
       split,
       generatedAt: new Date().toISOString(),
       count: eligible.length,
+      sampledOffsets: offsets.filter((offset) => !failedOffsets.includes(offset)),
+      failedOffsets,
       records: eligible,
     }),
     "utf8"
   );
-  console.log(`Bundled ${eligible.length} JMED-Personas records from config=${config}, split=${split}`);
+
+  console.log(
+    `Bundled ${eligible.length} JMED-Personas records from config=${config}, split=${split}` +
+      (failedOffsets.length ? `; skipped offsets=${failedOffsets.join(",")}` : "")
+  );
 }
 
 main().catch((error) => {
