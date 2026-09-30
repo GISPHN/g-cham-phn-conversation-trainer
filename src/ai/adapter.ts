@@ -74,15 +74,36 @@ export async function diagnoseWebGPU(): Promise<WebGPUDiagnostics> {
       webgpuAvailable: false,
       adapterAvailable: false,
       shaderF16: false,
+      adapterMode: "none",
     };
     return lastDiagnostics;
   }
 
   let adapter: any = null;
-  try {
-    adapter = await nav.gpu.requestAdapter({ powerPreference: "high-performance" });
-  } catch {
-    adapter = null;
+  let adapterMode: WebGPUDiagnostics["adapterMode"] = "none";
+
+  const attempts: Array<{
+    mode: Exclude<WebGPUDiagnostics["adapterMode"], "none" | undefined>;
+    options?: Record<string, unknown>;
+  }> = [
+    {
+      mode: "high-performance",
+      options: { powerPreference: "high-performance" },
+    },
+    { mode: "default" },
+    { mode: "low-power", options: { powerPreference: "low-power" } },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      adapter = await nav.gpu.requestAdapter(attempt.options);
+    } catch {
+      adapter = null;
+    }
+    if (adapter) {
+      adapterMode = attempt.mode;
+      break;
+    }
   }
 
   if (!adapter) {
@@ -90,6 +111,7 @@ export async function diagnoseWebGPU(): Promise<WebGPUDiagnostics> {
       webgpuAvailable: true,
       adapterAvailable: false,
       shaderF16: false,
+      adapterMode: "none",
     };
     return lastDiagnostics;
   }
@@ -117,6 +139,7 @@ export async function diagnoseWebGPU(): Promise<WebGPUDiagnostics> {
     adapterAvailable: true,
     shaderF16,
     adapterLabel: adapterLabel || undefined,
+    adapterMode,
     selectedModelId,
     fallbackUsed: selectedModelId === FALLBACK_LOCAL_MODEL_ID,
   };
