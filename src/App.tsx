@@ -523,7 +523,8 @@ export default function App() {
           generatePersonaConsistentFallbackDetail(
             scenario,
             detailRequest,
-            sessionMemory
+            sessionMemory,
+            nextState
           )
         );
         setSessionMemory((prev) => ({
@@ -642,7 +643,7 @@ export default function App() {
             特定保健指導の対象者との対話を、対象者背景と会話状態の変化を踏まえて練習する教育用プロトタイプです。
           </p>
         </div>
-        <span className="badge">MVP 0.6.1</span>
+        <span className="badge">MVP 0.7.0</span>
       </header>
 
       <section className="panel trainingSelector">
@@ -773,8 +774,8 @@ export default function App() {
         <div>
           <h2>会話生成モード</h2>
           <p className="small">
-            挨拶や単純な生活習慣の質問はJMED-Personasの事実から即答します。
-            複数の背景を統合する質問だけローカルAIで自然化します。
+            食事、運動、喫煙、飲酒、睡眠、仕事、健診・医療、家族・社会背景、
+            価値観や行動変容の掘り下げを、JMED-Personasと会話中の確定情報に沿って処理します。
           </p>
         </div>
 
