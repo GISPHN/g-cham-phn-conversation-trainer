@@ -799,7 +799,7 @@ export function isPersonaDetailAnswerValid(
     case "importance":
       return /大切|大事|重要|気になる|優先|必要/.test(text);
     case "goal":
-      return /目標|したい|やってみ|変え|増や|減ら|続け/.test(text);
+      return /目標|したい|やってみ|試して|決めて|変え|増や|減ら|続け/.test(text);
     case "readiness":
       return /今は|今すぐ|まだ|そろそろ|始め|取り組|やってみ|準備|気持ち|考えて/.test(text);
     case "benefit":
