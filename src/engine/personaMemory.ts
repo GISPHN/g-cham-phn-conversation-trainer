@@ -766,7 +766,7 @@ export function isPersonaDetailAnswerValid(
 
   switch (request.dimension) {
     case "amount":
-      return /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|本|g|グラム|ml|mL|合|割|品|人分)|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
+      return /[0-9０-９一二三四五六七八九十]+(?:皿|個|杯|本|g|グラム|ml|mL|合|割|品|人分|mmHg|kg(?:\/m2|\/m²)?|cm|%|mg\/dL|mmol\/L|U\/L)|[0-9０-９]+\/[0-9０-９]+|小鉢|片手|両手|ひとつかみ|一人分|半分|少なめ|多め/.test(
         text
       );
     case "frequency":
@@ -869,6 +869,22 @@ function dietFallback(
     })
     .map(([, value]) => value)
     .join(" ");
+
+  if (request.meal && !request.food && request.dimension === "presence") {
+    const mealLabel = mealLabels[request.meal];
+    const sentence = diet
+      .split(/[。．]/)
+      .map((part) => part.trim())
+      .find((part) => part.includes(mealLabel));
+
+    if (sentence) {
+      if (/抜く|食べない|欠食/.test(sentence)) {
+        return `${sentence}。毎日食べているわけではありません。`;
+      }
+      return `はい、${sentence}。`;
+    }
+    return naturalUnknown(p, mealLabel);
+  }
 
   if (request.meal && request.food && request.dimension === "presence") {
     if (
@@ -990,7 +1006,7 @@ function evidenceContainsUsefulFact(
   if (!compacted) return false;
 
   if (request.dimension === "amount") {
-    return /[0-9０-９一二三四五六七八九十]+(?:本|杯|合|皿|個|g|グラム|ml|mL|kg|キロ)/.test(compacted);
+    return /[0-9０-９一二三四五六七八九十]+(?:本|杯|合|皿|個|g|グラム|ml|mL|kg|キロ|mmHg|cm|%|mg\/dL|mmol\/L|U\/L)|[0-9０-９]+\/[0-9０-９]+/.test(compacted);
   }
   if (request.dimension === "frequency") {
     return /週|月|年|毎日|日|回|時々|たまに|ほぼ毎日/.test(compacted);
@@ -1002,6 +1018,64 @@ function evidenceContainsUsefulFact(
     return /[0-9０-９一二三四五六七八九十]+時|朝|昼|夕方|夜|就寝|起床/.test(compacted);
   }
   return true;
+}
+
+function factLockedAnswerFromEvidence(
+  request: PersonaDetailRequest,
+  evidence: string
+): string | null {
+  const first = extractFirstUsefulEvidence(evidence);
+  if (!first) return null;
+
+  if (request.domain === "checkup") {
+    if (request.subject === "blood_pressure") {
+      const match = first.match(/血圧\s*([0-9０-９]+\s*\/\s*[0-9０-９]+)\s*mmHg/i);
+      if (match) return `血圧は${match[1].replace(/\s+/g, "")} mmHgです。`;
+    }
+    if (request.subject === "weight") {
+      const match = first.match(/([0-9０-９]+(?:\.[0-9０-９]+)?)\s*kg/i);
+      if (match) return `体重は${match[1]} kgです。`;
+    }
+    if (request.subject === "bmi") {
+      const match = first.match(/([0-9０-９]+(?:\.[0-9０-９]+)?)\s*(?:kg\/m2|kg\/m²)?/i);
+      if (match) return `BMIは${match[1]}です。`;
+    }
+    if (request.subject === "hba1c") {
+      const match = first.match(/HbA1c\s*([0-9０-９]+(?:\.[0-9０-９]+)?)\s*%/i);
+      if (match) return `HbA1cは${match[1]}%です。`;
+    }
+    if (request.subject === "glucose") {
+      const match = first.match(/(?:空腹時?血糖|血糖)\s*([0-9０-９]+(?:\.[0-9０-９]+)?)\s*mg\/dL/i);
+      if (match) return `血糖は${match[1]} mg/dLです。`;
+    }
+    if (request.subject === "lipids") {
+      const query = request.queryText ?? "";
+      const label = /HDL/i.test(query) ? "HDL" : /中性脂肪|トリグリ/i.test(query) ? "(?:中性脂肪|トリグリセリド)" : "LDL";
+      const match = first.match(new RegExp(`${label}(?:コレステロール)?\\s*([0-9０-９]+(?:\\.[0-9０-９]+)?)\\s*mg/dL`, "i"));
+      if (match) {
+        const spoken = /HDL/i.test(query) ? "HDLコレステロール" : /中性脂肪|トリグリ/i.test(query) ? "中性脂肪" : "LDLコレステロール";
+        return `${spoken}は${match[1]} mg/dLです。`;
+      }
+    }
+  }
+
+  if (request.domain === "medication") {
+    if (request.dimension === "frequency" && /時々|毎日|週|月|回/.test(first)) {
+      return `服薬については、${first}という状況です。`;
+    }
+    if (request.dimension === "history" || request.dimension === "items" || request.dimension === "presence") {
+      return `${request.label}については、${first}という状況です。`;
+    }
+  }
+
+  if (
+    request.domain === "medical" &&
+    ["history", "items", "presence", "detail"].includes(request.dimension)
+  ) {
+    return `${request.label}については、${first}という状況です。`;
+  }
+
+  return null;
 }
 
 function motivationFallback(
@@ -1093,11 +1167,19 @@ function softDomainFallback(
   }
 
   if (request.dimension === "support") {
-    if (/独居|一人暮らし/.test(p.household + p.familyRelationship)) {
+    if (
+      p.familyRelationship &&
+      /サポート|支援|相談|同行|手伝|協力|友人|家族|配偶者|妻|夫|子ども|長男|長女/.test(
+        p.familyRelationship
+      )
+    ) {
+      return `相談や支援については、${p.familyRelationship}`;
+    }
+    if (/独居|一人暮らし/.test(p.household)) {
       return "普段は自分で決めることが多くて、毎日のことを手伝ってもらう人は特にいません。";
     }
     if (p.familyRelationship) {
-      return `家族については、${p.familyRelationship}という状況です。頼めることなら相談はできると思います。`;
+      return `家族については、${p.familyRelationship}という状況です。`;
     }
   }
 
@@ -1110,7 +1192,7 @@ function softDomainFallback(
 
   if (request.domain === "exercise" && request.dimension === "duration") {
     if (/ほとんど|なし|不足|少ない/.test(p.exercise)) {
-      return "運動としてまとまってする時間はほとんどありません。歩くとしても移動の時くらいです。";
+      return "運動としてまとまってすることは少なく、歩くとしても1回10分くらいです。";
     }
     return pickStable(seed, [
       "1回にすると20〜30分くらいのことが多いです。",
@@ -1124,11 +1206,18 @@ function softDomainFallback(
   }
 
   if (request.domain === "exercise" && request.dimension === "frequency") {
+    const explicitFrequency = p.exercise.match(/週\s*[0-9０-９]+(?:\s*[〜～-]\s*[0-9０-９]+)?回(?:以上|程度|くらい)?/);
+    if (explicitFrequency) {
+      return `運動は${explicitFrequency[0]}です。`;
+    }
     if (request.subject === "walking" && /通勤|移動|外回り/.test(p.exercise + p.occupation)) {
       return "歩くのは週に4〜5日くらいで、主に通勤や仕事の移動の時です。";
     }
     if (/定期的.*ない|運動.*なし|ほとんど/.test(p.exercise)) {
       return "運動として決めている回数は週0回で、日常の移動で歩く程度です。";
+    }
+    if (/少ない/.test(p.exercise)) {
+      return "運動として行うのは週に1回あるかないかくらいです。";
     }
     return "週に2〜3回くらいです。";
   }
@@ -1181,6 +1270,26 @@ function softDomainFallback(
     if (request.subject === "wakeup") return "起きるのは6時台が多いです。";
   }
 
+  if (request.domain === "alcohol" && request.dimension === "frequency") {
+    if (/なし|飲まない|非飲酒/.test(p.alcohol)) {
+      return "普段は飲まないので、週0回です。";
+    }
+    const explicitFrequency = p.alcohol.match(/週\s*[0-9０-９]+(?:\s*[〜～-]\s*[0-9０-９]+)?(?:回|日)/);
+    if (explicitFrequency) {
+      return `お酒は${explicitFrequency[0]}くらいです。`;
+    }
+    if (/多量|ほぼ毎日|毎日/.test(p.alcohol)) {
+      return "週に5〜6日くらい飲むことがあります。";
+    }
+    if (/機会飲酒/.test(p.alcohol)) {
+      return "毎週ではなく、月に1〜2回くらいです。";
+    }
+    if (/少量/.test(p.alcohol)) {
+      return "週に1〜2回くらいです。";
+    }
+    return "週に2〜3回くらいです。";
+  }
+
   if (request.domain === "alcohol" && request.dimension === "context") {
     return /なし|飲まない/.test(p.alcohol)
       ? "普段はお酒を飲む場面はほとんどありません。"
@@ -1212,6 +1321,8 @@ function genericFallback(
     if (!firstEvidence || !evidenceContainsUsefulFact(evidence, request)) {
       return naturalUnknown(p, request.label);
     }
+    const exact = factLockedAnswerFromEvidence(request, evidence);
+    if (exact) return exact;
   }
 
   const soft = syntheticDetailDomains.has(request.domain)
