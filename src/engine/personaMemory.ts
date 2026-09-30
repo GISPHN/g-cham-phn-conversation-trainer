@@ -146,7 +146,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   }
   if (/変わった|変化|以前と比べ|増えた|減った/.test(t)) return "change";
   if (
-    /どんな|どのような|何を|種類|具体的|詳しく|詳しい|内容|方法|やり方|メニュー|献立|中身/.test(
+    /どんな|どのような|どのように|どうやって|何を|何ですか|種類|具体的|詳しく|詳しい|内容|方法|やり方|メニュー|献立|中身/.test(
       t
     )
   ) {
