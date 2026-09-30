@@ -2,6 +2,14 @@ import * as webllm from "@mlc-ai/web-llm";
 import { ConversationState, Message, Scenario, TurnAnalysis } from "../domain/types";
 import { formatSessionMemory, isPersonaDetailAnswerValid, PersonaDetailRequest, PersonaSessionMemory } from "../engine/personaMemory";
 import { factLockedDomains } from "../engine/detailSchema";
+import {
+  FALLBACK_LOCAL_MODEL_ID,
+  PRIMARY_LOCAL_MODEL_ID,
+  classifyLocalAIInitFailure,
+  formatWebGPUDiagnostics,
+  selectLocalModelForDiagnostics,
+  type WebGPUDiagnostics,
+} from "./diagnostics";
 
 export type AIReplyInput = {
   scenario: Scenario;
@@ -28,17 +36,108 @@ export type AIProgress = {
   progress?: number;
 };
 
-const MODEL_ID = "gemma-2-2b-jpn-it-q4f16_1-MLC";
-
+let activeModelId = PRIMARY_LOCAL_MODEL_ID;
 let engine: webllm.MLCEngineInterface | null = null;
 let loadingPromise: Promise<webllm.MLCEngineInterface> | null = null;
+let lastDiagnostics: WebGPUDiagnostics | null = null;
 
 export function isWebGPUSupported(): boolean {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
 
 export function getLocalModelId(): string {
-  return MODEL_ID;
+  return activeModelId;
+}
+
+export function getLastWebGPUDiagnostics(): WebGPUDiagnostics | null {
+  return lastDiagnostics;
+}
+
+export function getLocalAIDiagnosticsSummary(): string {
+  return formatWebGPUDiagnostics(lastDiagnostics);
+}
+
+type NavigatorWithGPU = Navigator & {
+  gpu?: {
+    requestAdapter: (options?: Record<string, unknown>) => Promise<any>;
+  };
+};
+
+export async function diagnoseWebGPU(): Promise<WebGPUDiagnostics> {
+  const nav =
+    typeof navigator !== "undefined"
+      ? (navigator as NavigatorWithGPU)
+      : undefined;
+
+  if (!nav?.gpu) {
+    lastDiagnostics = {
+      webgpuAvailable: false,
+      adapterAvailable: false,
+      shaderF16: false,
+    };
+    return lastDiagnostics;
+  }
+
+  let adapter: any = null;
+  try {
+    adapter = await nav.gpu.requestAdapter({ powerPreference: "high-performance" });
+  } catch {
+    adapter = null;
+  }
+
+  if (!adapter) {
+    lastDiagnostics = {
+      webgpuAvailable: true,
+      adapterAvailable: false,
+      shaderF16: false,
+    };
+    return lastDiagnostics;
+  }
+
+  const shaderF16 = Boolean(adapter.features?.has?.("shader-f16"));
+  const info = adapter.info;
+  const adapterLabel = [
+    info?.vendor,
+    info?.architecture,
+    info?.device,
+    info?.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const selectedModelId = selectLocalModelForDiagnostics({
+    webgpuAvailable: true,
+    adapterAvailable: true,
+    shaderF16,
+  }) ?? PRIMARY_LOCAL_MODEL_ID;
+
+  lastDiagnostics = {
+    webgpuAvailable: true,
+    adapterAvailable: true,
+    shaderF16,
+    adapterLabel: adapterLabel || undefined,
+    selectedModelId,
+    fallbackUsed: selectedModelId === FALLBACK_LOCAL_MODEL_ID,
+  };
+  activeModelId = selectedModelId;
+  return lastDiagnostics;
+}
+
+async function createEngine(
+  modelId: string,
+  onProgress?: (progress: AIProgress) => void
+): Promise<webllm.MLCEngineInterface> {
+  return webllm.CreateMLCEngine(modelId, {
+    initProgressCallback: (report) => {
+      onProgress?.({
+        text: report.text,
+        progress:
+          typeof report.progress === "number" ? report.progress : undefined,
+      });
+    },
+    logLevel: "WARN",
+  });
 }
 
 export async function initLocalAI(
@@ -47,19 +146,73 @@ export async function initLocalAI(
   if (engine) return engine;
   if (loadingPromise) return loadingPromise;
 
-  loadingPromise = webllm.CreateMLCEngine(MODEL_ID, {
-    initProgressCallback: (report) => {
-      onProgress?.({
-        text: report.text,
-        progress: typeof report.progress === "number" ? report.progress : undefined,
-      });
-    },
-    logLevel: "WARN",
-  });
+  const diagnostics = await diagnoseWebGPU();
+
+  if (!diagnostics.webgpuAvailable) {
+    throw new Error("WEBGPU_UNAVAILABLE");
+  }
+  if (!diagnostics.adapterAvailable) {
+    throw new Error("ADAPTER_UNAVAILABLE");
+  }
+
+  if (diagnostics.fallbackUsed) {
+    onProgress?.({
+      text:
+        "shader-f16非対応を検出しました。互換性の高いq4f32モデルへ自動切替しています…",
+    });
+  } else {
+    onProgress?.({
+      text: "WebGPUとshader-f16を確認しました。日本語ローカルAIを準備しています…",
+    });
+  }
+
+  const tryModel = async (modelId: string) => {
+    activeModelId = modelId;
+    if (lastDiagnostics) {
+      lastDiagnostics = {
+        ...lastDiagnostics,
+        selectedModelId: modelId,
+        fallbackUsed: modelId === FALLBACK_LOCAL_MODEL_ID,
+      };
+    }
+    return createEngine(modelId, onProgress);
+  };
+
+  loadingPromise = tryModel(activeModelId);
 
   try {
     engine = await loadingPromise;
     return engine;
+  } catch (firstError) {
+    const classified = classifyLocalAIInitFailure(firstError);
+
+    if (
+      activeModelId === PRIMARY_LOCAL_MODEL_ID &&
+      classified.code === "shader_f16_unavailable"
+    ) {
+      onProgress?.({
+        text:
+          "shader-f16での初期化に失敗したため、q4f32互換モデルで再試行しています…",
+      });
+      loadingPromise = tryModel(FALLBACK_LOCAL_MODEL_ID);
+      try {
+        engine = await loadingPromise;
+        return engine;
+      } catch (fallbackError) {
+        const fallbackClassified = classifyLocalAIInitFailure(fallbackError);
+        throw new Error(
+          `LOCAL_AI_INIT_FAILED[${fallbackClassified.code}]: ${fallbackClassified.message} / ${String(
+            fallbackError
+          )}`
+        );
+      }
+    }
+
+    throw new Error(
+      `LOCAL_AI_INIT_FAILED[${classified.code}]: ${classified.message} / ${String(
+        firstError
+      )}`
+    );
   } finally {
     loadingPromise = null;
   }
