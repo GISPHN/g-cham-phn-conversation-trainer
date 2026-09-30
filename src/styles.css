@@ -27,3 +27,5 @@
   .trainingGrid{grid-template-columns:1fr}
   .trainingSummary{grid-template-columns:1fr}
 }
+
+.aiDiagnostic{margin-top:6px;overflow-wrap:anywhere;line-height:1.5}
