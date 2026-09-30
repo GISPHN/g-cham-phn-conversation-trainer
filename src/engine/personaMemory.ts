@@ -125,6 +125,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   ) {
     return "barrier";
   }
+  if (/どうすれば|どうしたら|工夫|方法.*続|やり方.*続/.test(t)) return "strategy";
   if (/自信|できそう|できると思|続けられそう/.test(t)) return "confidence";
   if (
     /どのくらい.*(?:大切|重要)|どれくらい.*(?:大切|重要)|(?:大切|重要).*(?:程度|思いますか|感じますか)|優先度|重要度/.test(
@@ -137,7 +138,6 @@ function detailDimension(text: string): PersonaDetailDimension {
   if (/準備|今すぐ|いつから|始める気|取り組む気|変える気/.test(t)) return "readiness";
   if (/良いこと|メリット|変えたら.*良|改善したら.*良/.test(t)) return "benefit";
   if (/困ること|デメリット|変えると.*困|嫌なこと/.test(t)) return "disadvantage";
-  if (/どうすれば|どうしたら|工夫|方法.*続|やり方.*続/.test(t)) return "strategy";
   if (/目標|どうしたい|変えたい|取り組みたい|やってみたい/.test(t)) return "goal";
   if (/きっかけ|始めた理由|吸う理由|飲む理由/.test(t)) return "trigger";
   if (/なぜ|どうして|理由|何があって|どういうわけ/.test(t)) return "reason";
