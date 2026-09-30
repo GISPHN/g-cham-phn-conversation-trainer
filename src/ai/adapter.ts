@@ -1,6 +1,7 @@
 import * as webllm from "@mlc-ai/web-llm";
 import { ConversationState, Message, Scenario, TurnAnalysis } from "../domain/types";
 import { formatSessionMemory, isPersonaDetailAnswerValid, PersonaDetailRequest, PersonaSessionMemory } from "../engine/personaMemory";
+import { factLockedDomains } from "../engine/detailSchema";
 
 export type AIReplyInput = {
   scenario: Scenario;
@@ -257,10 +258,10 @@ export async function generatePersonaDetail(
     `JMED-Personas由来の関連情報: ${input.evidence || "明示なし"}\n` +
     `保健師の質問: ${input.latestUserText}\n\n` +
     "人物背景と既存の追加設定に矛盾しない範囲で、質問された下位項目そのものに直接答える具体的な内容を1〜2文で生成してください。" +
-    "質問次元に必ず直接答えてください。amountなら量、frequencyなら頻度、durationなら時間の長さ、timeなら時刻や時間帯、itemsなら内容や種類、presenceなら有無、reasonなら理由、barrierなら困難要因、supportなら支援者、historyなら過去の経過、confidenceなら自信の程度、importanceなら重要だと思う程度を答えてください。" +
+    "質問次元に必ず直接答えてください。amountなら量、frequencyなら頻度、durationなら時間の長さ、timeなら時刻や時間帯、itemsなら内容や種類、presenceなら有無、reasonなら理由、barrierなら困難要因、supportなら支援者、historyなら過去の経過、confidenceなら自信の程度、importanceなら重要だと思う程度、readinessなら今どの程度取り組む気持ちか、benefitなら本人が感じる利点、disadvantageなら本人が感じる不利益、understandingなら健診結果等の受け止め、strategyなら本人にとって実行しやすい工夫を答えてください。" +
     "量を聞かれているのに有無だけ、頻度を聞かれているのに内容だけ、理由を聞かれているのに事実の反復だけ、といった回答は禁止です。" +
-    "ここでは会話シミュレーションの一貫性を保つため、日常生活上の細部を補って構いません。" +
-    "ただし病名、検査値、服薬、家族歴、収入額など医学的・社会経済的な新規事実は作らないでください。" +
+    "食事、運動、喫煙、飲酒、睡眠、仕事、家族、社会参加、受診アクセス、価値観、ストレス、行動変容については、人物背景と矛盾しない日常生活上の細部を補って構いません。" +
+    "ただし健診結果、病名・既往歴、症状、家族歴、薬剤名・用量・服薬回数などの医学的事実は、JMED-Personas由来の関連情報に明示されているものだけを使ってください。明示されていなければ推測せず、『そこまでは分からない』『覚えていない』など対象者として自然に答えてください。" +
     "一度ここで決めた内容は以後この対象者の設定として固定されるため、既存設定と整合させてください。" +
     "保健師が『ではなく』『違う』『聞いているのは』などと訂正している場合は、その訂正を最優先し、直前の誤った回答を繰り返さないでください。" +
     "同じ話題を掘り下げる時は直前の対象を保持し、別の話題が明示された時は古い話題を持ち越さないでください。" +
@@ -299,7 +300,19 @@ export async function generatePersonaDetail(
           !input.evidence.includes(term) &&
           !input.latestUserText.includes(term)
       );
-      if (!introducedMedical && isPersonaDetailAnswerValid(input.request, text)) {
+
+      const factLocked = factLockedDomains.has(input.request.domain);
+      const responseNumbers = text.match(/[0-9０-９]+(?:\.[0-9０-９]+)?/g) ?? [];
+      const allowedFactText = `${input.evidence} ${input.latestUserText}`;
+      const introducedLockedNumber =
+        factLocked &&
+        responseNumbers.some((value) => !allowedFactText.includes(value));
+
+      if (
+        !introducedMedical &&
+        !introducedLockedNumber &&
+        isPersonaDetailAnswerValid(input.request, text)
+      ) {
         return text;
       }
     }
