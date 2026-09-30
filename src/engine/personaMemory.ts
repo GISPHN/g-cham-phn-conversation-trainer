@@ -873,6 +873,34 @@ function dietFallback(
     .map(([, value]) => value)
     .join(" ");
 
+  if (!request.meal && !request.food && request.dimension === "items") {
+    const parts = diet
+      .split(/[。．]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length) {
+      const mealParts = parts.filter((part) =>
+        /朝食|昼食|夕食|間食/.test(part)
+      );
+      const foodParts = parts.filter((part) =>
+        /主食|米飯|ご飯|パン|麺|肉|魚|卵|乳製品|豆腐|納豆|野菜|果物|外食|弁当|惣菜/.test(
+          part
+        )
+      );
+
+      const selected = [...mealParts, ...foodParts]
+        .filter((part, index, array) => array.indexOf(part) === index)
+        .slice(0, 5);
+
+      if (selected.length) {
+        return `${selected.join("。")}。`;
+      }
+
+      return `${parts.slice(0, 4).join("。")}。`;
+    }
+  }
+
   if (request.meal && !request.food && request.dimension === "presence") {
     const mealLabel = mealLabels[request.meal];
     const sentence = diet
