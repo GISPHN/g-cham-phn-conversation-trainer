@@ -136,7 +136,7 @@ function detailDimension(text: string): PersonaDetailDimension {
   if (/なぜ|どうして|理由|何があって|どういうわけ/.test(t)) return "reason";
 
   if (
-    /どれくらいの量|どのくらいの量|量は|量ですか|何皿|何個|何杯|何本|何グラム|何g|何ml|何mL|何合|何人前/.test(
+    /どれくらいの量|どのくらいの量|どれくらいでした|どのくらいでした|量は|量ですか|何皿|何個|何杯|何本|何グラム|何g|何ml|何mL|何合|何人前/.test(
       t
     )
   ) {
@@ -428,7 +428,7 @@ export function detectPersonaDetailRequest(
     const explicitDetail =
       dimension !== "detail" ||
       isCorrection ||
-      /具体的|詳しく|どのよう|どんな|教えて|聞かせて/.test(focus);
+      /具体的|詳しく|どのよう|どんな|どうですか|どうでした|教えて|聞かせて/.test(focus);
 
     if (!explicitDetail) return null;
 
