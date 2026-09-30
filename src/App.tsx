@@ -38,10 +38,12 @@ import {
 import {
   generateLocalAIReply,
   generatePersonaDetail,
+  getLocalAIDiagnosticsSummary,
   getLocalModelId,
   initLocalAI,
   isWebGPUSupported,
 } from "./ai/adapter";
+import { classifyLocalAIInitFailure } from "./ai/diagnostics";
 import {
   checkProposalConsistency,
   detectPersonaDetailRequest,
@@ -161,6 +163,7 @@ export default function App() {
   const [aiStatus, setAIStatus] = useState<AIStatus>("off");
   const [aiProgress, setAIProgress] = useState("");
   const [aiProgressValue, setAIProgressValue] = useState<number | null>(null);
+  const [aiDiagnostic, setAIDiagnostic] = useState("");
   const [generating, setGenerating] = useState(false);
   const [thinkingFiller, setThinkingFiller] = useState("");
   const [sessionMemory, setSessionMemory] = useState<PersonaSessionMemory>({});
@@ -400,12 +403,14 @@ export default function App() {
       setAIProgress(
         "このブラウザまたは端末ではWebGPUを利用できません。ルールベース会話を継続して利用できます。"
       );
+      setAIDiagnostic("WebGPU: 非対応");
       return;
     }
 
     setAIStatus("loading");
-    setAIProgress("ローカルAIを準備しています…");
+    setAIProgress("WebGPUとGPU機能を診断しています…");
     setAIProgressValue(0);
+    setAIDiagnostic("");
 
     try {
       await initLocalAI((progress) => {
@@ -415,14 +420,22 @@ export default function App() {
             ? Math.round(progress.progress * 100)
             : null
         );
+        setAIDiagnostic(getLocalAIDiagnosticsSummary());
       });
       setAIStatus("ready");
-      setAIProgress("ローカルAIの準備が完了しました。複雑な質問だけAIで自然化します。");
+      setAIProgress(
+        "ローカルAIの準備が完了しました。複雑な質問だけAIで自然化します。"
+      );
+      setAIDiagnostic(getLocalAIDiagnosticsSummary());
       setAIProgressValue(100);
     } catch (error) {
       console.error(error);
+      const classified = classifyLocalAIInitFailure(error);
       setAIStatus("error");
-      setAIProgress("ローカルAIを読み込めませんでした。ルールベース会話を使用します。");
+      setAIProgress(
+        `${classified.message} ルールベース会話はそのまま利用できます。`
+      );
+      setAIDiagnostic(getLocalAIDiagnosticsSummary());
       setAIProgressValue(null);
     }
   };
@@ -812,6 +825,9 @@ export default function App() {
             <p className="small">{aiProgress}</p>
             {aiProgressValue !== null && <progress max="100" value={aiProgressValue} />}
             <p className="tiny">モデル: {getLocalModelId()}</p>
+            {aiDiagnostic && (
+              <p className="tiny aiDiagnostic">診断: {aiDiagnostic}</p>
+            )}
           </div>
         )}
       </section>
