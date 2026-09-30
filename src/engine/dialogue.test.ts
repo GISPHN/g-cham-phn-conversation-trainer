@@ -270,7 +270,7 @@ describe("dialogue regression", () => {
     ).toBe("exercise.activity.items");
     expect(
       detectPersonaDetailRequest("普段は何時ごろ寝ていますか")?.key
-    ).toBe("sleep.pattern.time");
+    ).toBe("sleep.bedtime.time");
     expect(
       detectPersonaDetailRequest("お酒は週に何回くらい飲みますか")?.key
     ).toBe("alcohol.pattern.frequency");
@@ -319,7 +319,7 @@ describe("dialogue regression", () => {
   it("detects work, family, finance, and healthcare follow-ups", () => {
     expect(
       detectPersonaDetailRequest("仕事は何時ごろ終わりますか")?.key
-    ).toBe("work.pattern.time");
+    ).toBe("work.schedule.time");
     expect(
       detectPersonaDetailRequest("家族に協力してもらえそうですか")?.key
     ).toBe("family.relationship.support");
@@ -345,7 +345,7 @@ describe("dialogue regression", () => {
     ).toBe("values.priority.items");
     expect(
       detectPersonaDetailRequest("続けられる自信はどのくらいありますか")?.key
-    ).toBe("motivation.change.confidence");
+    ).toBe("motivation.confidence.confidence");
   });
 
   it("grounds medical and social questions in expanded JMED persona fields", () => {
