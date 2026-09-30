@@ -590,11 +590,82 @@ function evidenceForDomain(persona: Persona, domain: PersonaDetailDomain): strin
   }
 }
 
+function evidenceForSpecificSubject(
+  persona: Persona,
+  request: PersonaDetailRequest
+): string[] | null {
+  if (request.domain === "checkup") {
+    switch (request.subject) {
+      case "weight":
+        return nonEmpty([labeled("体重", persona.weight)]);
+      case "bmi":
+        return nonEmpty([labeled("BMI", persona.bmi)]);
+      case "waist":
+        return nonEmpty([
+          labeled("健診歴", persona.checkupHistory),
+          labeled("医学的背景", persona.personaMedicalBackground),
+        ]);
+      case "blood_pressure":
+        return nonEmpty([labeled("バイタルサイン", persona.vitalSigns)]);
+      case "glucose":
+      case "hba1c":
+      case "lipids":
+      case "liver":
+        return nonEmpty([labeled("血液検査", persona.bloodTests)]);
+    }
+  }
+
+  if (request.domain === "medical") {
+    switch (request.subject) {
+      case "diagnosis":
+        return nonEmpty([
+          labeled("主病名", persona.primaryDiagnosis),
+          labeled("既往歴", persona.pastMedicalHistory),
+        ]);
+      case "symptom":
+        return nonEmpty([
+          labeled("症状", persona.symptoms),
+          labeled("受診理由・主訴", persona.chiefComplaint),
+        ]);
+      case "family_history":
+        return nonEmpty([labeled("家族歴", persona.familyHistory)]);
+      case "treatment":
+        return nonEmpty([
+          labeled("治療方針・治療目標", persona.treatmentGoals),
+          labeled("医学的背景", persona.personaMedicalBackground),
+        ]);
+    }
+  }
+
+  if (request.domain === "medication") {
+    switch (request.subject) {
+      case "adherence":
+        return nonEmpty([
+          labeled("服薬管理・アドヒアランス", persona.medicationAdherence),
+          labeled("処方薬", persona.medications),
+        ]);
+      case "timing":
+        return nonEmpty([
+          labeled("処方薬", persona.medications),
+          labeled("服薬管理・アドヒアランス", persona.medicationAdherence),
+        ]);
+      case "concern":
+        return nonEmpty([
+          labeled("服薬管理・アドヒアランス", persona.medicationAdherence),
+          labeled("価値観・心理面", persona.personaPsychology),
+        ]);
+    }
+  }
+
+  return null;
+}
+
 export function personaEvidenceForDetail(
   scenario: Scenario,
   request: PersonaDetailRequest
 ): string {
-  return evidenceForDomain(scenario.persona, request.domain).join("\n");
+  const specific = evidenceForSpecificSubject(scenario.persona, request);
+  return (specific ?? evidenceForDomain(scenario.persona, request.domain)).join("\n");
 }
 
 export function formatSessionMemory(memory: PersonaSessionMemory): string {
