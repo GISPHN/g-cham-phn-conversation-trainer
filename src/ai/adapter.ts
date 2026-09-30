@@ -87,6 +87,19 @@ function personaPrompt(s: Scenario, st: ConversationState): string {
 教育歴: ${p.education ?? ""}
 居住都道府県: ${p.prefecture ?? ""}
 社会参加・孤立: ${p.socialParticipation ?? ""}
+健診歴: ${p.checkupHistory ?? ""}
+既往歴: ${p.pastMedicalHistory ?? ""}
+主病名: ${p.primaryDiagnosis ?? ""}
+かかりつけ・医療利用: ${p.healthcareUse ?? ""}
+処方薬: ${p.medications ?? ""}
+服薬管理: ${p.medicationAdherence ?? ""}
+医療アクセス: ${p.healthcareAccess ?? ""}
+居住環境: ${p.livingEnvironment ?? ""}
+ADL/IADL: ${p.adlIadl ?? ""}
+価値観・心理面: ${p.personaPsychology ?? ""}
+生活習慣記述: ${p.personaLifestyle ?? ""}
+生活背景・支援状況: ${p.personaLifestyleBackground ?? ""}
+支援ポイント: ${p.personaSupportPoints ?? ""}
 Big Five: ${p.bigFive ?? ""}
 発話量: ${p.talkativeness ?? "medium"}
 自発性: ${p.initiative ?? "medium"}
