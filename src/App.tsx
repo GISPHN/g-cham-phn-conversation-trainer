@@ -450,7 +450,7 @@ export default function App() {
       lastDetailRequest
     );
     const detailRequest =
-      analysis.elicitsGoal || analysis.behaviorProposal || analysis.checkupOpening
+      analysis.elicitsGoal || analysis.behaviorProposal
         ? null
         : rawDetailRequest;
     const rememberedDetail =
