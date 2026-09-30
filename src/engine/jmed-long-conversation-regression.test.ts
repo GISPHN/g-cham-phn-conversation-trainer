@@ -531,9 +531,13 @@ describe("long conversation regression with fixed JMED-Personas synthetic record
 
       if (profile.expected.breakfastSkipping) {
         const breakfast = requests.find(
-          (r) => r.key === "diet.breakfast.general.presence"
-        )!;
-        expect(memory[breakfast.key]).toMatch(/抜く|食べない|毎日では|日がある/);
+          (r) =>
+            r.domain === "diet" &&
+            r.meal === "breakfast" &&
+            r.dimension === "presence"
+        );
+        expect(breakfast).toBeDefined();
+        expect(memory[breakfast!.key]).toMatch(/抜く|食べない|毎日では|日がある/);
       }
 
       if (profile.expected.lowConcern) {
